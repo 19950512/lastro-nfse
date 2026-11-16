@@ -1,0 +1,27 @@
+# Estado local de ferramentas (nunca publicar)
+.tlc/
+.claude/settings.local.json
+
+# Segredos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Node / build
+node_modules/
+dist/
+build/
+coverage/
+*.log
+.turbo/
+.pnpm-store/
+
+# Editores e sistema
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
