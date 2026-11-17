@@ -19,7 +19,9 @@
     "preparar": "node --env-file-if-exists=.env apps/worker/src/cli.ts preparar",
     "sondar": "node --env-file-if-exists=.env apps/worker/src/cli.ts sondar",
     "coletar": "node --env-file-if-exists=.env apps/worker/src/cli.ts coletar",
-    "mudancas": "node --env-file-if-exists=.env apps/worker/src/cli.ts mudancas"
+    "mudancas": "node --env-file-if-exists=.env apps/worker/src/cli.ts mudancas",
+    "notificar": "node --env-file-if-exists=.env apps/worker/src/cli.ts notificar",
+    "api": "node --env-file-if-exists=.env apps/api/src/servidor.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

@@ -152,6 +152,50 @@ describe('coletarFonte', () => {
     expect(r.urls.map((u) => u.situacao)).toEqual(['documento-novo', 'documento-novo', 'erro']);
   });
 
+  it('documento despublicado gera um evento de indisponível, e um de restabelecido quando volta', async () => {
+    const rotas: Record<string, Rota> = {
+      [ROBOTS]: { status: 404 },
+      [SEMENTE]: html(['rtc/a.pdf']),
+      [DOC_A]: pdf('A v1'),
+    };
+    await coletarFonte(FONTE, montar(rotas).deps);
+
+    rotas[DOC_A] = { status: 302, cabecalhos: { location: `${SEMENTE}/login` } };
+    rotas[`${SEMENTE}/login`] = { cabecalhos: { 'content-type': 'text/html' }, corpo: '<h2>Site Error</h2> Unauthorized' };
+    const fora = await coletarFonte(FONTE, montar(rotas).deps);
+    expect(fora.eventos.map((e) => [e.tipo, e.url])).toEqual([['documento-indisponivel', DOC_A]]);
+
+    const aindaFora = await coletarFonte(FONTE, montar(rotas).deps);
+    expect(aindaFora.eventos).toHaveLength(0);
+
+    rotas[DOC_A] = pdf('A v1');
+    const volta = await coletarFonte(FONTE, montar(rotas).deps);
+    expect(volta.eventos.map((e) => e.tipo)).toEqual(['documento-restabelecido']);
+  });
+
+  it('erro 5xx é instabilidade, não indisponibilidade', async () => {
+    const rotas: Record<string, Rota> = { [ROBOTS]: { status: 404 }, [SEMENTE]: html(['rtc/a.pdf']), [DOC_A]: pdf('A') };
+    await coletarFonte(FONTE, montar(rotas).deps);
+    rotas[DOC_A] = { status: 503 };
+    expect((await coletarFonte(FONTE, montar(rotas).deps)).eventos).toHaveLength(0);
+  });
+
+  it('marca como anomalia a semente que vira página de manutenção', async () => {
+    const docs = ['rtc/a.pdf', 'rtc/b.xlsx', 'rtc/c.pdf'];
+    const conteudo = `<html><body><main><p>${'Documentação técnica da reforma. '.repeat(20)}</p>${docs.map((d) => `<a href="${d}">d</a>`).join('')}</main></body></html>`;
+    const rotas: Record<string, Rota> = {
+      [ROBOTS]: { status: 404 },
+      [SEMENTE]: { cabecalhos: { 'content-type': 'text/html' }, corpo: conteudo },
+    };
+    await coletarFonte(FONTE, montar(rotas).deps, { colherDocumentos: false });
+
+    rotas[SEMENTE] = { cabecalhos: { 'content-type': 'text/html' }, corpo: '<main>Sistema em Manutenção Programada</main>' };
+    const r = await coletarFonte(FONTE, montar(rotas).deps, { colherDocumentos: false });
+    const novaVersao = r.eventos.find((e) => e.tipo === 'nova-versao');
+    expect(novaVersao?.anomalia).toContain('texto encolheu');
+    expect(novaVersao?.anomalia).toContain('3 de 3 links');
+  });
+
   it('página de manutenção (200 + HTML) no lugar do PDF não vira versão nova (caso real do INLABS)', async () => {
     const rotas: Record<string, Rota> = {
       [ROBOTS]: { status: 404 },
@@ -163,6 +207,6 @@ describe('coletarFonte', () => {
     rotas[DOC_A] = { cabecalhos: { 'content-type': 'text/html' }, corpo: '<h1>Sistema em Manutenção Programada</h1>' };
     const r = await coletarFonte(FONTE, montar(rotas).deps);
     expect(r.urls.find((u) => u.url === DOC_A)?.detalhe).toContain('mime-negado');
-    expect(r.eventos).toHaveLength(0);
+    expect(r.eventos.map((e) => e.tipo)).toEqual(['documento-indisponivel']);
   });
 });

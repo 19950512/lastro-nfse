@@ -31,7 +31,15 @@ export interface NovoSnapshot {
   readonly impressao: string;
 }
 
-export type TipoEvento = 'documento-novo' | 'nova-versao' | 'link-removido';
+export const TIPOS_EVENTO = [
+  'documento-novo',
+  'nova-versao',
+  'link-removido',
+  'documento-indisponivel',
+  'documento-restabelecido',
+] as const;
+
+export type TipoEvento = (typeof TIPOS_EVENTO)[number];
 
 export interface EventoMudanca {
   readonly id: string;
@@ -42,6 +50,8 @@ export interface EventoMudanca {
   readonly snapshotNovo: string | null;
   readonly detectadoEm: string;
   readonly resumo: string;
+  // why: mudança anômala vai para revisão humana antes de entrar no índice (SEGURANCA.md §8); null = normal.
+  readonly anomalia: string | null;
 }
 
 export interface RegistroVerificacao {
@@ -62,6 +72,7 @@ export interface ArquivoVersionado {
   registrarVerificacao(registro: RegistroVerificacao): Promise<void>;
   registrarEvento(evento: Omit<EventoMudanca, 'id'>): Promise<EventoMudanca>;
   listarEventos(desde?: Date): Promise<EventoMudanca[]>;
+  ultimoEvento(url: string): Promise<EventoMudanca | undefined>;
 }
 
 export class ErroArquivo extends Error {
@@ -208,8 +219,12 @@ export class ArquivoEmDisco implements ArquivoVersionado {
   }
 
   async listarEventos(desde?: Date): Promise<EventoMudanca[]> {
-    const eventos = await lerLinhas<EventoMudanca>(this.caminhoEventos);
+    const eventos = (await lerLinhas<EventoMudanca>(this.caminhoEventos)).map((e) => ({ ...e, anomalia: e.anomalia ?? null }));
     if (desde === undefined) return eventos;
     return eventos.filter((e) => new Date(e.detectadoEm) >= desde);
+  }
+
+  async ultimoEvento(url: string): Promise<EventoMudanca | undefined> {
+    return (await this.listarEventos()).filter((e) => e.url === url).at(-1);
   }
 }

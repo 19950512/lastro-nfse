@@ -35,6 +35,7 @@ interface LinhaEvento {
   snapshot_novo: string | null;
   detectado_em: Date;
   resumo: string;
+  anomalia: string | null;
 }
 
 function paraSnapshot(l: LinhaSnapshot): RegistroSnapshot {
@@ -63,8 +64,13 @@ function paraEvento(l: LinhaEvento): EventoMudanca {
     snapshotNovo: l.snapshot_novo,
     detectadoEm: l.detectado_em.toISOString(),
     resumo: l.resumo,
+    anomalia: l.anomalia,
   };
 }
+
+const SELECAO_EVENTO = `
+  SELECT e.id, e.tipo, e.fonte_id, d.url, e.snapshot_anterior, e.snapshot_novo, e.detectado_em, e.resumo, e.anomalia
+    FROM evento_mudanca e JOIN documento d ON d.id = e.documento_id`;
 
 const SELECAO_SNAPSHOT = `
   SELECT s.id, s.fonte_id, d.url, s.url_final, s.coletado_em, s.sha256, s.impressao, s.bytes, s.mime,
@@ -184,8 +190,8 @@ export class ArquivoPostgres implements ArquivoVersionado {
   async registrarEvento(evento: Omit<EventoMudanca, 'id'>): Promise<EventoMudanca> {
     const documentoId = await this.garantirDocumento(this.pool, evento.url, evento.fonteId);
     const r = await this.pool.query<{ id: string }>(
-      `INSERT INTO evento_mudanca (tipo, fonte_id, documento_id, snapshot_anterior, snapshot_novo, detectado_em, resumo)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      `INSERT INTO evento_mudanca (tipo, fonte_id, documento_id, snapshot_anterior, snapshot_novo, detectado_em, resumo, anomalia)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
       [
         evento.tipo,
         evento.fonteId,
@@ -194,6 +200,7 @@ export class ArquivoPostgres implements ArquivoVersionado {
         evento.snapshotNovo,
         new Date(evento.detectadoEm),
         evento.resumo,
+        evento.anomalia,
       ],
     );
     const linha = r.rows[0];
@@ -203,12 +210,20 @@ export class ArquivoPostgres implements ArquivoVersionado {
 
   async listarEventos(desde?: Date): Promise<EventoMudanca[]> {
     const r = await this.pool.query<LinhaEvento>(
-      `SELECT e.id, e.tipo, e.fonte_id, d.url, e.snapshot_anterior, e.snapshot_novo, e.detectado_em, e.resumo
-         FROM evento_mudanca e JOIN documento d ON d.id = e.documento_id
+      `${SELECAO_EVENTO}
         WHERE $1::timestamptz IS NULL OR e.detectado_em >= $1
         ORDER BY e.detectado_em, e.id`,
       [desde ?? null],
     );
     return r.rows.map(paraEvento);
+  }
+
+  async ultimoEvento(url: string): Promise<EventoMudanca | undefined> {
+    const r = await this.pool.query<LinhaEvento>(
+      `${SELECAO_EVENTO} WHERE d.url = $1 ORDER BY e.detectado_em DESC, e.id DESC LIMIT 1`,
+      [url],
+    );
+    const linha = r.rows[0];
+    return linha === undefined ? undefined : paraEvento(linha);
   }
 }

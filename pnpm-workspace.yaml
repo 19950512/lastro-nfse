@@ -8,3 +8,8 @@ minimumReleaseAge: 10080
 
 # why: SEGURANCA.md §12 — nenhum script de instalação de dependência roda sem aprovação explícita.
 strictDepBuilds: true
+
+overrides:
+  # why: GHSA-g3hv-75wg-m249 (DoS em minimatch < 11.0.1) via @eslint/config-array 0.23.5; a versão que já
+  # traz a correção (0.23.6) ainda não cumpre minimumReleaseAge. Remover quando o eslint puxar minimatch 11.
+  minimatch: ^11.0.5

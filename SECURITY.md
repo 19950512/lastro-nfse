@@ -20,6 +20,11 @@ Inclua, se possível:
 
 ## Escopo
 
-O projeto tem hoje só o coletor de fontes oficiais (`packages/ingest`, `apps/worker`), sem serviço em produção. Interessam em especial falhas que permitam ao coletor alcançar origem fora da lista oficial ou rede interna (SSRF), ou gravar no arquivo conteúdo de origem não oficial. Relatos sobre o desenho de segurança descrito em [docs/SEGURANCA.md](docs/SEGURANCA.md) também são bem-vindos.
+O projeto tem hoje o coletor de fontes oficiais, a API somente leitura com a tela `/painel` e o envio de webhooks, sem serviço em produção. Interessam em especial:
+
+- **Coletor e webhooks:** alcançar origem fora da lista oficial ou rede interna (SSRF).
+- **Arquivo:** gravar conteúdo de origem não oficial ou alterar o histórico.
+- **Webhooks:** forjar a assinatura HMAC.
+- **API e tela:** XSS na tela ou nos downloads de originais. Relatos sobre o desenho de segurança descrito em [docs/SEGURANCA.md](docs/SEGURANCA.md) também são bem-vindos.
 
 Nunca inclua em issues, pull requests ou commits: chaves de API, senhas, tokens, dados pessoais ou dados fiscais de clientes.

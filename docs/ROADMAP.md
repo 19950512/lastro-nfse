@@ -20,15 +20,23 @@ Estado em 16/11/2026: ✅ feito · 🟡 parcial · ⬜ pendente.
 
 ## Fase 1 — Monitor oficial
 
-- 🟡 Adaptadores, arquivo versionado com hash, detecção de mudança. Pronto:
+- ✅ Adaptadores, arquivo versionado com hash, detecção de mudança:
   - adaptador genérico (página-semente + documentos linkados), cliente HTTPS com as proteções de rede de SEGURANCA.md §8, robots.txt (RFC 9309), limite por host;
   - detecção por impressão digital de conteúdo; tipo da resposta conferido contra a extensão do documento;
-  - eventos `documento-novo` / `nova-versao` / `link-removido`;
-  - arquivo em **Postgres + S3 com Object Lock COMPLIANCE** ([packages/db](../packages/db)): bytes endereçados por SHA-256, gravação sem sobrescrita e com checksum conferido pelo servidor, segunda barreira de origem, papéis `lastro_coletor` (SELECT + INSERT) e `lastro_leitor` (SELECT), e triggers que recusam UPDATE/DELETE/TRUNCATE até para o dono das tabelas. Coberto por testes de integração contra os serviços reais.
+  - eventos `documento-novo`, `nova-versao`, `link-removido`, `documento-indisponivel` (só 401/403/404/410, página de erro no lugar do arquivo ou redirecionamento para fora da lista; 5xx e falha de rede não contam) e `documento-restabelecido`;
+  - **alerta de anomalia**: nova versão com texto encolhido a menos de 30%, metade dos links de documentos sumida, troca de tipo ou de domínio sai marcada para revisão humana ([anomalia.ts](../packages/ingest/src/anomalia.ts));
+  - arquivo em **Postgres + S3 com Object Lock COMPLIANCE** ([packages/db](../packages/db)): bytes endereçados por SHA-256, gravação sem sobrescrita e com checksum conferido pelo servidor, segunda barreira de origem, papéis `lastro_coletor` (SELECT + INSERT), `lastro_leitor` (SELECT) e `lastro_notificador` (lê eventos, escreve só nas tabelas de webhook), e triggers que recusam UPDATE/DELETE/TRUNCATE até para o dono das tabelas.
+- ✅ Feed "o que mudou":
+  - API somente leitura ([apps/api](../apps/api)): `GET /v1/mudancas` (filtros por data, fonte, tipo e anomalia; paginação por cursor), `/v1/fontes` (com atraso pelo SLA), `/v1/documentos`, `/v1/documentos/{id}`, `/v1/snapshots/{id}/original` e `/v1/openapi.json` gerado dos schemas Zod;
+  - webhooks ([packages/webhooks](../packages/webhooks)) com HMAC-SHA256 + timestamp, conteúdo mínimo, formato `lastro` ou `slack`, validação de URL no cadastro e de DNS a cada envio, sem seguir redirecionamento, espera crescente entre tentativas, desistência após 6 tentativas e desativação após 20 falhas seguidas. O Slack entra como formato de webhook; **e-mail ficou de fora** (depende de escolher o provedor de envio).
+- ✅ Tela simples de documentos e versões (`/painel`): HTML sem script, CSP sem `script-src`, todo texto vindo das fontes escapado por padrão.
+- ✅ Segurança da fase: CI ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) com CodeQL, OSV-Scanner e Gitleaks, actions fixadas por hash.
 
-  Falta: alerta de anomalia de conteúdo (ex.: página de manutenção arquivada como versão da semente, caso do INLABS), evento `documento-indisponivel` para arquivo despublicado, credencial S3 própria do coletor sem permissão de apagar, proxy de egresso e limites de ZIP/XML (entram com os parsers).
-- ⬜ Feed "o que mudou" (API + webhooks + e-mail/Slack). Hoje existe só o comando `mudancas` da CLI.
-- ⬜ Tela simples de documentos e versões.
+Pendências conhecidas, fora do escopo mínimo da fase:
+- **Credenciais e rede:** credencial S3 própria do coletor sem permissão de apagar; proxy de egresso.
+- **Segredos:** gerenciador de segredos em produção (hoje o local usa `.env`); segredo de webhook cifrado no banco.
+- **API:** autenticação e limite de requisições. Por isso ela recusa escutar fora de 127.0.0.1 (requisitos da Fase 2).
+- **Parsers:** limites de ZIP/XML, que entram com os parsers da Fase 2.
 
 **Valor**: substitui a ronda manual por 5–7 sites. Funciona sem IA.
 

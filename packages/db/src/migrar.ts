@@ -10,6 +10,7 @@ const TRAVA_MIGRACAO = 7_212_026;
 export interface SenhasPapeis {
   readonly coletor: string;
   readonly leitor: string;
+  readonly notificador: string;
 }
 
 /**
@@ -36,6 +37,7 @@ export async function prepararBanco(
     for (const [papel, senha] of [
       ['lastro_coletor', senhas.coletor],
       ['lastro_leitor', senhas.leitor],
+      ['lastro_notificador', senhas.notificador],
     ] as const) {
       const existe = await cliente.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [papel]);
       if (existe.rowCount === 0) await cliente.query(`CREATE ROLE ${cliente.escapeIdentifier(papel)}`);

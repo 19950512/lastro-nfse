@@ -71,7 +71,7 @@ describe('ArquivoEmDisco', () => {
 
   it('filtra eventos por data', async () => {
     const arquivo = new ArquivoEmDisco(raiz);
-    const base = { tipo: 'nova-versao' as const, fonteId: 'f', url: URL_PDF, snapshotAnterior: null, snapshotNovo: null, resumo: '' };
+    const base = { tipo: 'nova-versao' as const, fonteId: 'f', url: URL_PDF, snapshotAnterior: null, snapshotNovo: null, resumo: '', anomalia: null };
     await arquivo.registrarEvento({ ...base, detectadoEm: '2026-11-01T00:00:00.000Z' });
     await arquivo.registrarEvento({ ...base, detectadoEm: '2026-11-15T00:00:00.000Z' });
     expect(await arquivo.listarEventos(new Date('2026-11-10T00:00:00Z'))).toHaveLength(1);

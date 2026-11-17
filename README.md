@@ -48,7 +48,16 @@ pnpm sondar                     # Fase 0: valida as fontes e regenera docs/SONDA
 pnpm coletar                    # coleta tudo e grava snapshots versionados
 pnpm coletar --fonte nfse-rtc --sem-documentos
 pnpm mudancas --desde 2026-11-01
+
+pnpm api                        # API somente leitura + tela em http://127.0.0.1:8080/painel
+pnpm lastro webhook adicionar --url https://seu-receptor/lastro [--formato slack] [--fonte nfse-rtc]
+pnpm lastro webhook listar
+pnpm notificar                  # envia aos assinantes os eventos pendentes
 ```
+
+Agendamento sugerido: `pnpm coletar; pnpm notificar` a cada hora. As duas saem com código 2 quando há falha, para virar alerta.
+
+O receptor confere o cabeçalho `lastro-assinatura: t=<unix>,v1=<hmac>`: HMAC-SHA256 de `<t>.<corpo>` com o segredo mostrado no cadastro, recusando `t` com mais de 5 minutos de diferença. Referência: `verificarAssinatura` em [packages/webhooks/src/assinatura.ts](packages/webhooks/src/assinatura.ts).
 
 `LASTRO_ARQUIVO=postgres` (padrão do `.env` gerado) grava em Postgres + S3; `disco` grava em `dados/arquivo`, sem precisar de Docker.
 
@@ -56,8 +65,10 @@ pnpm mudancas --desde 2026-11-01
 |---|---|
 | [packages/core](packages/core) | Lista fechada de origens oficiais e catálogo de fontes |
 | [packages/ingest](packages/ingest) | Cliente HTTPS protegido (SSRF, fixação de DNS, limites), robots.txt, extração de links, impressão digital de conteúdo, arquivo em disco e coletor |
-| [packages/db](packages/db) | Arquivo em Postgres + S3 WORM, migrações e papéis mínimos de banco |
-| [apps/worker](apps/worker) | CLI: `preparar`, `sondar`, `coletar`, `mudancas` |
+| [packages/db](packages/db) | Arquivo em Postgres + S3 WORM, consultas de leitura, migrações e papéis mínimos de banco |
+| [packages/webhooks](packages/webhooks) | Assinaturas, HMAC, envio protegido contra SSRF e despacho com novas tentativas |
+| [apps/worker](apps/worker) | CLI: `preparar`, `sondar`, `coletar`, `mudancas`, `webhook`, `notificar` |
+| [apps/api](apps/api) | API REST somente leitura (`/v1/...`) e tela `/painel` |
 
 `coletar` sai com código 2 quando alguma URL falha ou é bloqueada por robots.txt, para o agendador transformar isso em alerta.
 
@@ -68,4 +79,4 @@ pnpm mudancas --desde 2026-11-01
 - ISS fica para uma fase posterior: legislação municipal, alíquotas, apuração e sites de prefeituras. A lista de serviços da LC 116 entra só como tabela de códigos usada no leiaute da NFS-e.
 - Stack: TypeScript / Node.js 24.
 - LLM: Claude (Anthropic API), modelo `claude-opus-5-5`.
-- Fase 0 implementada (sondagem automatizada das fontes) junto com a base da Fase 1 (coleta segura, arquivo versionado, detecção de mudança). Ver o estado de cada item no [ROADMAP.md](docs/ROADMAP.md).
+- Fase 0 (sondagem automatizada das fontes) e Fase 1 (monitor: coleta segura, arquivo versionado WORM, detecção de mudança e de anomalia, API do feed, webhooks e tela) implementadas. Ver o estado de cada item e as pendências no [ROADMAP.md](docs/ROADMAP.md).

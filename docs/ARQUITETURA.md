@@ -170,6 +170,8 @@ O identificador público de um *snapshot* (`documento + sha256`) é estável: qu
 
 Autenticação por chave de API por cliente, limite de requisições e medição de uso por chave. Especificação OpenAPI gerada a partir dos schemas Zod.
 
+Estado na Fase 1: já existem `/v1/mudancas`, `/v1/fontes`, `/v1/documentos`, `/v1/documentos/{id}`, `/v1/snapshots/{id}/original` e `/v1/openapi.json`, somente leitura e sem autenticação. Por isso a API só escuta em 127.0.0.1. As assinaturas de webhook são cadastradas pela CLI (`pnpm lastro webhook adicionar`) até existir autenticação por cliente para `POST /v1/webhooks`.
+
 ### 4.2 Servidor MCP
 
 Exposto em Streamable HTTP (remoto, com autenticação) e stdio (uso local). Ferramentas:

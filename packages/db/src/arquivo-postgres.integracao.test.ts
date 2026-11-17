@@ -7,6 +7,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ArquivoPostgres } from './arquivo-postgres.ts';
 import { configBanco, configS3 } from './config.ts';
+import { ConsultasPostgres, ErroCursor } from './consultas.ts';
 import { prepararBanco } from './migrar.ts';
 import { StorageWorm } from './storage.ts';
 
@@ -39,6 +40,7 @@ beforeAll(async () => {
   await prepararBanco(configBanco('admin', ambiente), {
     coletor: configBanco('coletor', ambiente).password as string,
     leitor: configBanco('leitor', ambiente).password as string,
+    notificador: configBanco('notificador', ambiente).password as string,
   });
   const cfgS3 = configS3(ambiente);
   storage = StorageWorm.criar(cfgS3);
@@ -115,6 +117,53 @@ describe('ArquivoPostgres (Postgres + S3 WORM reais)', () => {
       /retention|COMPLIANCE/i,
     );
     expect((await arquivo.lerConteudo(s.sha256)).toString()).toBe(`worm ${rodada}`);
+  });
+
+  it('guarda anomalia e devolve o último evento da URL', async () => {
+    const url = `${base}/evento.pdf`;
+    const comum = { fonteId: 'teste', url, snapshotAnterior: null, snapshotNovo: null, resumo: 'r' };
+    await arquivo.registrarEvento({ ...comum, tipo: 'documento-novo', detectadoEm: '2026-11-16T10:00:00.000Z', anomalia: null });
+    await arquivo.registrarEvento({
+      ...comum,
+      tipo: 'documento-indisponivel',
+      detectadoEm: '2026-11-16T11:00:00.000Z',
+      anomalia: 'texto encolheu',
+    });
+    const ultimo = await arquivo.ultimoEvento(url);
+    expect(ultimo?.tipo).toBe('documento-indisponivel');
+    expect(ultimo?.anomalia).toBe('texto encolheu');
+    expect(await arquivo.ultimoEvento(`${base}/nunca-visto.pdf`)).toBeUndefined();
+  });
+
+  it('feed pagina por cursor sem perder nem repetir eventos com o mesmo horário', async () => {
+    const fonteId = `pagina-${rodada.slice(0, 8)}`;
+    const mesmoInstante = '2026-11-16T15:00:00.000Z';
+    for (let i = 0; i < 7; i++) {
+      await arquivo.registrarEvento({
+        tipo: 'nova-versao',
+        fonteId,
+        url: `${base}/pagina-${String(i)}.pdf`,
+        snapshotAnterior: null,
+        snapshotNovo: null,
+        detectadoEm: mesmoInstante,
+        resumo: String(i),
+        anomalia: i === 3 ? 'texto encolheu' : null,
+      });
+    }
+    const consultas = new ConsultasPostgres(leitor);
+    const vistos: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const pagina = await consultas.listarMudancas({ fonteId, limite: 3, cursor });
+      vistos.push(...pagina.itens.map((m) => m.id));
+      cursor = pagina.proximo ?? undefined;
+    } while (cursor !== undefined);
+    expect(vistos).toHaveLength(7);
+    expect(new Set(vistos).size).toBe(7);
+
+    const anomalas = await consultas.listarMudancas({ fonteId, anomalia: true, limite: 10 });
+    expect(anomalas.itens.map((m) => m.resumo)).toEqual(['3']);
+    await expect(consultas.listarMudancas({ limite: 1, cursor: 'nao-e-cursor' })).rejects.toThrow(ErroCursor);
   });
 
   it('coleta completa: segunda rodada sem mudança não gera evento', async () => {

@@ -1,7 +1,8 @@
 import type { ArquivoVersionado } from '@lastro/ingest';
 import pg from 'pg';
 import { ArquivoPostgres } from './arquivo-postgres.ts';
-import { configBanco, configS3 } from './config.ts';
+import { configBanco, configS3, type Papel } from './config.ts';
+import { ConsultasPostgres, type ConsultasArquivo } from './consultas.ts';
 import { prepararBanco } from './migrar.ts';
 import { StorageWorm } from './storage.ts';
 
@@ -38,10 +39,43 @@ export async function abrirArquivoPostgres(
   };
 }
 
+export interface ConsultasAbertas {
+  readonly consultas: ConsultasArquivo;
+  readonly pool: pg.Pool;
+  readonly lerOriginal: (sha: string) => Promise<Buffer>;
+  fechar(): Promise<void>;
+}
+
+export async function abrirConsultas(ambiente: NodeJS.ProcessEnv = process.env): Promise<ConsultasAbertas> {
+  const storage = StorageWorm.criar(configS3(ambiente));
+  const pool = new pg.Pool(configBanco('leitor', ambiente));
+  try {
+    await pool.query('SELECT 1');
+  } catch (erro) {
+    await pool.end();
+    storage.destruir();
+    throw erro;
+  }
+  return {
+    consultas: new ConsultasPostgres(pool),
+    pool,
+    lerOriginal: (sha) => storage.ler(sha),
+    fechar: async () => {
+      await pool.end();
+      storage.destruir();
+    },
+  };
+}
+
+export function abrirPool(papel: Papel, ambiente: NodeJS.ProcessEnv = process.env): pg.Pool {
+  return new pg.Pool(configBanco(papel, ambiente));
+}
+
 export async function prepararInfra(ambiente: NodeJS.ProcessEnv = process.env): Promise<{ migracoes: string[] }> {
   const migracoes = await prepararBanco(configBanco('admin', ambiente), {
     coletor: String(configBanco('coletor', ambiente).password),
     leitor: String(configBanco('leitor', ambiente).password),
+    notificador: String(configBanco('notificador', ambiente).password),
   });
   const s3 = configS3(ambiente);
   const storage = StorageWorm.criar(s3);

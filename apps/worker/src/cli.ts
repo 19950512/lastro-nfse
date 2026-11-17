@@ -2,7 +2,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { buscarFonte, FONTES, type Fonte } from '@lastro/core';
-import { abrirArquivoPostgres, prepararInfra, type ArquivoAberto } from '@lastro/db';
+import { abrirArquivoPostgres, abrirPool, prepararInfra, type ArquivoAberto } from '@lastro/db';
+import { criarAssinatura, criarEnviadorHttps, desativarAssinatura, despachar, listarAssinaturas } from '@lastro/webhooks';
 import {
   ArquivoEmDisco,
   CacheRobots,
@@ -30,6 +31,10 @@ Comandos:
   mudancas   Lista eventos de mudança
              --dados <dir>       arquivo em disco; padrão: dados/arquivo
              --desde <AAAA-MM-DD>
+  webhook    adicionar --url https://... [--formato lastro|slack] [--fonte id]... [--tipo t]...
+             listar
+             remover --id <uuid> [--motivo texto]
+  notificar  Envia aos assinantes os eventos pendentes (papel lastro_notificador)
 
 Ambiente (.env):
   LASTRO_ARQUIVO       disco (padrão) | postgres
@@ -154,11 +159,80 @@ async function comandoMudancas(args: string[]): Promise<void> {
   }
 }
 
+async function comandoWebhook(args: string[]): Promise<void> {
+  const [acao, ...resto] = args;
+  const { values } = parseArgs({
+    args: resto,
+    options: {
+      url: { type: 'string' },
+      formato: { type: 'string', default: 'lastro' },
+      fonte: { type: 'string', multiple: true },
+      tipo: { type: 'string', multiple: true },
+      id: { type: 'string' },
+      motivo: { type: 'string', default: 'removida pelo operador' },
+    },
+  });
+  const pool = abrirPool('admin');
+  try {
+    if (acao === 'adicionar') {
+      if (values.url === undefined) throw new Error('informe --url');
+      if (values.formato !== 'lastro' && values.formato !== 'slack') throw new Error('--formato deve ser lastro ou slack');
+      const { id, segredo } = await criarAssinatura(
+        pool,
+        { url: values.url, formato: values.formato, fontes: values.fonte, tipos: values.tipo },
+        new Set(FONTES.map((f) => f.id)),
+      );
+      console.log(`Assinatura ${id} criada.`);
+      console.log(`Segredo HMAC (mostrado só agora; guarde no receptor): ${segredo}`);
+      return;
+    }
+    if (acao === 'listar') {
+      for (const a of await listarAssinaturas(pool)) {
+        console.log(
+          `${a.id}  ${a.ativa ? 'ativa   ' : 'inativa '} ${a.formato.padEnd(6)} entregues=${String(a.entregues)} pendentes=${String(a.pendentes)} falhas=${String(a.falhasConsecutivas)}  ${a.url}${a.motivoDesativacao === null ? '' : `  (${a.motivoDesativacao})`}`,
+        );
+      }
+      return;
+    }
+    if (acao === 'remover') {
+      if (values.id === undefined) throw new Error('informe --id');
+      console.log((await desativarAssinatura(pool, values.id, values.motivo)) ? 'Assinatura desativada.' : 'Nenhuma assinatura ativa com esse id.');
+      return;
+    }
+    throw new Error('ação de webhook: adicionar | listar | remover');
+  } finally {
+    await pool.end();
+  }
+}
+
+async function comandoNotificar(): Promise<void> {
+  const pool = abrirPool('notificador');
+  try {
+    const r = await despachar(pool, criarEnviadorHttps(), {
+      urlPublicaApi: process.env.LASTRO_API_URL_PUBLICA ?? 'http://127.0.0.1:8080',
+    });
+    if (r.emAndamento) {
+      console.error('Outro despacho está em andamento; nada feito.');
+      return;
+    }
+    console.log(
+      `enfileiradas=${String(r.enfileiradas)} entregues=${String(r.entregues)} falhas=${String(r.falhas)} desistencias=${String(r.desistencias)} desativadas=${String(r.desativadas)}`,
+    );
+    if (r.falhas > 0) process.exitCode = 2;
+  } finally {
+    await pool.end();
+  }
+}
+
 async function principal(argv: string[]): Promise<void> {
   const [comando, ...resto] = argv;
   switch (comando) {
     case 'preparar':
       return comandoPreparar();
+    case 'webhook':
+      return comandoWebhook(resto);
+    case 'notificar':
+      return comandoNotificar();
     case 'sondar':
       return comandoSondar(resto);
     case 'coletar':
