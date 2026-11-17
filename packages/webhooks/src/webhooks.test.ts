@@ -77,6 +77,14 @@ describe('montarCorpo', () => {
     });
   });
 
+  it('remove barras finais da URL pública em tempo linear', () => {
+    const corpo = JSON.parse(montarCorpo(evento, 'lastro', 'https://api.lastro.example///')) as { links: { documento: string } };
+    expect(corpo.links.documento).toBe('https://api.lastro.example/v1/documentos/d1');
+    const inicio = performance.now();
+    montarCorpo(evento, 'lastro', `https://a${'/'.repeat(40_000)}a`);
+    expect(performance.now() - inicio).toBeLessThan(50);
+  });
+
   it('formato slack escapa marcação', () => {
     const corpo = JSON.parse(montarCorpo(evento, 'slack', 'https://api.lastro.example')) as { text: string };
     expect(corpo.text).toContain('https://www.gov.br/nfse/&lt;b&gt;&amp;x');

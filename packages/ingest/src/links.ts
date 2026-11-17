@@ -13,8 +13,25 @@ const TIPOS_FEED = new Set(['application/rss+xml', 'application/atom+xml']);
 function rotuloCharset(contentType: string | undefined, corpo: Buffer): string {
   const doCabecalho = /charset=["']?([\w-]+)/i.exec(contentType ?? '')?.[1];
   if (doCabecalho !== undefined) return doCabecalho;
-  const inicio = corpo.subarray(0, 4096).toString('latin1');
-  return /<meta[^>]+charset=["']?([\w-]+)/i.exec(inicio)?.[1] ?? 'utf-8';
+  return charsetDoMeta(corpo.subarray(0, 4096).toString('latin1').toLowerCase()) ?? 'utf-8';
+}
+
+// hazard: o HTML vem de site externo; a busca é linear (indexOf + regex ancorada), sem `[^>]+…charset=`,
+// que retrocede de forma quadrática (alerta js/polynomial-redos do CodeQL).
+function charsetDoMeta(html: string): string | undefined {
+  let posicao = html.indexOf('<meta');
+  while (posicao !== -1) {
+    const fim = html.indexOf('>', posicao);
+    const tag = html.slice(posicao, fim === -1 ? undefined : fim);
+    const atributo = tag.indexOf('charset=');
+    if (atributo !== -1) {
+      const valor = /^["']?([\w-]+)/.exec(tag.slice(atributo + 'charset='.length))?.[1];
+      if (valor !== undefined) return valor;
+    }
+    if (fim === -1) return undefined;
+    posicao = html.indexOf('<meta', fim);
+  }
+  return undefined;
 }
 
 /** why: o Planalto publica em windows-1252/ISO-8859-1; decodificar como UTF-8 corromperia acentos. */

@@ -32,7 +32,9 @@ function escaparSlack(texto: string): string {
  * então um webhook vazado ou interceptado não carrega mais do que o próprio feed público.
  */
 export function montarCorpo(evento: EventoParaEnvio, formato: FormatoWebhook, urlPublicaApi: string): string {
-  const base = urlPublicaApi.replace(/\/+$/, '');
+  let base = urlPublicaApi;
+  // why: laço em vez de /\/+$/, que é quadrático numa sequência longa de barras (alerta js/polynomial-redos).
+  while (base.endsWith('/')) base = base.slice(0, -1);
   const linkDocumento = `${base}/v1/documentos/${evento.documentoId}`;
   if (formato === 'slack') {
     const alerta = evento.anomalia === null ? '' : ' (marcado para revisão)';

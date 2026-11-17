@@ -80,6 +80,18 @@ describe('decodificarHtml', () => {
     expect(decodificarHtml(corpo, 'text/html')).toContain('ç');
   });
 
+  it('acha o charset no segundo <meta> e ignora metas sem charset', () => {
+    const corpo = Buffer.concat([Buffer.from('<meta name="x" content="y"><META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=windows-1252">'), Buffer.from([0xe9])]);
+    expect(decodificarHtml(corpo, 'text/html')).toContain('é');
+  });
+
+  it('é linear com HTML hostil (ReDoS)', () => {
+    const hostil = Buffer.from('<meta '.repeat(700) + ' '.repeat(5000));
+    const inicio = performance.now();
+    decodificarHtml(hostil, 'text/html');
+    expect(performance.now() - inicio).toBeLessThan(50);
+  });
+
   it('cai para UTF-8 com charset desconhecido', () => {
     expect(decodificarHtml(Buffer.from('ação'), 'text/html; charset=inexistente')).toBe('ação');
   });
