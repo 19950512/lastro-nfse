@@ -1,0 +1,10 @@
+packages:
+  - packages/*
+  - apps/*
+
+# why: SEGURANCA.md §12 — recusar versões publicadas há menos de 7 dias (em minutos),
+# janela em que pacotes comprometidos costumam ser detectados e despublicados.
+minimumReleaseAge: 10080
+
+# why: SEGURANCA.md §12 — nenhum script de instalação de dependência roda sem aprovação explícita.
+strictDepBuilds: true

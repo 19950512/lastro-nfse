@@ -1,0 +1,33 @@
+# Ambiente local: Postgres + storage S3 com Object Lock (WORM).
+# Segredos vêm do .env (gerado por `pnpm infra:env`, nunca versionado).
+name: lastro
+
+services:
+  postgres:
+    # why: imagem fixada por digest (SEGURANCA.md §12); a tag sozinha pode ser trocada no registro.
+    image: postgres:18-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015
+    environment:
+      POSTGRES_USER: lastro_admin
+      POSTGRES_PASSWORD: ${LASTRO_PG_ADMIN_SENHA:?rode pnpm infra:env}
+      POSTGRES_DB: ${LASTRO_PG_BANCO:-lastro}
+    # hazard: publicar só em 127.0.0.1; 0.0.0.0 exporia o banco para a rede local.
+    ports: ["127.0.0.1:${LASTRO_PG_PORTA:-55432}:5432"]
+    volumes: ["pg:/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "lastro_admin", "-d", "${LASTRO_PG_BANCO:-lastro}"]
+      interval: 2s
+      retries: 30
+
+  s3:
+    # why: o MinIO comunitário deixou de publicar imagens; o RustFS 1.0.5 passou no teste de
+    # Object Lock COMPLIANCE, If-None-Match e checksum SHA-256 (ver docs/ARQUITETURA.md §5).
+    image: rustfs/rustfs:1.0.5@sha256:b81d16a90ee25bd9511280127ca1471788c6e874cf0f0da759645f46b2dc1d74
+    environment:
+      RUSTFS_ACCESS_KEY: ${LASTRO_S3_ACCESS_KEY:?rode pnpm infra:env}
+      RUSTFS_SECRET_KEY: ${LASTRO_S3_SECRET_KEY:?rode pnpm infra:env}
+    ports: ["127.0.0.1:${LASTRO_S3_PORTA:-59000}:9000"]
+    volumes: ["s3:/data"]
+
+volumes:
+  pg: {}
+  s3: {}

@@ -6,20 +6,29 @@ Cada fase só termina quando cumpre também os requisitos de segurança listados
 
 ## Fase 0 — Validação das fontes
 
-- Confirmar cada fonte marcada como `a validar` em [FONTES-OFICIAIS.md](FONTES-OFICIAIS.md): acesso, robots.txt, formato, estabilidade de URLs, existência de feed ou API (DOU/INLABS, LexML, CGIBS, Receita, Fazenda, Portal NF-e).
-- Fechar a lista de domínios e órgãos oficiais permitidos.
-- Localizar o texto oficial do Ato Conjunto RFB/CGIBS nº 4/2026 (DOU ou CGIBS); hoje só a notícia da Receita foi lida.
-- Coleta manual de uma amostra de cada fonte para testar os parsers (PDF com páginas, XLSX dos anexos, XSD).
-- Montar o **conjunto de referência**: perguntas reais de empresas com resposta e fontes esperadas, e alegações reais com veredito definido por especialista.
-- Definir quem faz a curadoria de fatos (ver decisões em aberto).
+Estado em 16/11/2026: ✅ feito · 🟡 parcial · ⬜ pendente.
 
-**Critério de saída**: todas as fontes N1–N3 do MVP com método de coleta comprovado.
+- ✅ Confirmar cada fonte marcada como `a validar` em [FONTES-OFICIAIS.md](FONTES-OFICIAIS.md): acesso, robots.txt, formato, estabilidade, existência de feed ou API. Feito por `pnpm sondar` → [SONDAGEM-FASE-0.md](SONDAGEM-FASE-0.md). Duas fontes ficaram **bloqueadas**: DOU (`www.in.gov.br` recusa robôs) e Portal NF-e (exige cookie).
+- ✅ Fechar a lista de domínios e órgãos oficiais permitidos: [packages/core/src/origem.ts](../packages/core/src/origem.ts), com host + prefixo por órgão (o `www.gov.br` é compartilhado por todos os ministérios).
+- ✅ Localizar o texto oficial do Ato Conjunto RFB/CGIBS nº 4/2026: está em `cgibs.gov.br/atos-conjuntos`. Na busca apareceu também o **Ato Conjunto nº 7/2026**, que altera o nº 4 (ver FONTES-OFICIAIS.md, item 5).
+- 🟡 Coleta de uma amostra de cada fonte para testar os parsers: a coleta completa (`pnpm coletar`) arquiva hoje 129 documentos (PDF, XLSX, ZIP com XSD, HTML). Os parsers são da Fase 2.
+- ⬜ Montar o **conjunto de referência**: perguntas reais de empresas com resposta e fontes esperadas, e alegações reais com veredito definido por especialista. Depende de especialista.
+- ⬜ Definir quem faz a curadoria de fatos (ver decisões em aberto).
+- ⬜ Segurança da Fase 0: modelo de ameaças STRIDE e política de dados/LGPD (ver [SEGURANCA.md](SEGURANCA.md#15-testes-de-segurança-e-requisitos-por-fase)).
+
+**Critério de saída**: todas as fontes N1–N3 do MVP com método de coleta comprovado. **Ainda não cumprido** por causa do DOU (decisão em aberto nº 7) e do Portal NF-e.
 
 ## Fase 1 — Monitor oficial
 
-- Adaptadores, arquivo versionado com hash, detecção de mudança.
-- Feed "o que mudou" (API + webhooks + e-mail/Slack).
-- Tela simples de documentos e versões.
+- 🟡 Adaptadores, arquivo versionado com hash, detecção de mudança. Pronto:
+  - adaptador genérico (página-semente + documentos linkados), cliente HTTPS com as proteções de rede de SEGURANCA.md §8, robots.txt (RFC 9309), limite por host;
+  - detecção por impressão digital de conteúdo; tipo da resposta conferido contra a extensão do documento;
+  - eventos `documento-novo` / `nova-versao` / `link-removido`;
+  - arquivo em **Postgres + S3 com Object Lock COMPLIANCE** ([packages/db](../packages/db)): bytes endereçados por SHA-256, gravação sem sobrescrita e com checksum conferido pelo servidor, segunda barreira de origem, papéis `lastro_coletor` (SELECT + INSERT) e `lastro_leitor` (SELECT), e triggers que recusam UPDATE/DELETE/TRUNCATE até para o dono das tabelas. Coberto por testes de integração contra os serviços reais.
+
+  Falta: alerta de anomalia de conteúdo (ex.: página de manutenção arquivada como versão da semente, caso do INLABS), evento `documento-indisponivel` para arquivo despublicado, credencial S3 própria do coletor sem permissão de apagar, proxy de egresso e limites de ZIP/XML (entram com os parsers).
+- ⬜ Feed "o que mudou" (API + webhooks + e-mail/Slack). Hoje existe só o comando `mudancas` da CLI.
+- ⬜ Tela simples de documentos e versões.
 
 **Valor**: substitui a ronda manual por 5–7 sites. Funciona sem IA.
 
@@ -92,3 +101,4 @@ O conjunto de referência roda a cada mudança de prompt, modelo ou pipeline; um
    | `lastro-nfse.com.br` | Principal | Disponível |
    | `lastronfse.com.br` | Redireciona para o principal (quem digita sem hífen) | Disponível |
    | `lastrotributario.com.br` | Reserva para quando o escopo passar da NFS-e (ISS, NF-e) | Disponível |
+7. **Acesso ao DOU** (achado da Fase 0). O portal `www.in.gov.br` derruba a conexão de User-Agents de robô e só responde a navegadores. O projeto não disfarça o robô de navegador. Opções: (a) cadastrar uma conta no INLABS, a via oficial de acesso automatizado (em 16/11/2026 o INLABS estava em manutenção programada; reavaliar com `pnpm sondar --fonte dou` quando voltar); (b) pedir à Imprensa Nacional a liberação do User-Agent do robô; (c) não coletar o DOU direto e usar como N1 os PDFs que os próprios órgãos publicam (CGIBS, Planalto, SIJUT), mantendo o DOU só para conferência manual.

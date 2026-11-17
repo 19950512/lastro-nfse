@@ -25,3 +25,6 @@ coverage/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Dados coletados (arquivo versionado local e sondagens brutas)
+dados/

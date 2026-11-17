@@ -1,0 +1,33 @@
+{
+  "name": "lastro",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "packageManager": "pnpm@11.18.0",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:integracao": "vitest run --config vitest.integracao.config.ts",
+    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "infra:env": "node scripts/gerar-env.ts",
+    "infra:subir": "docker compose up -d --wait",
+    "infra:descer": "docker compose down",
+    "lastro": "node --env-file-if-exists=.env apps/worker/src/cli.ts",
+    "preparar": "node --env-file-if-exists=.env apps/worker/src/cli.ts preparar",
+    "sondar": "node --env-file-if-exists=.env apps/worker/src/cli.ts sondar",
+    "coletar": "node --env-file-if-exists=.env apps/worker/src/cli.ts coletar",
+    "mudancas": "node --env-file-if-exists=.env apps/worker/src/cli.ts mudancas"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@types/node": "^24.19.2",
+    "eslint": "^10.0.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^8.0.0",
+    "vitest": "^5.1.0"
+  }
+}

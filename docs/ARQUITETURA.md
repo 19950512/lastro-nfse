@@ -40,7 +40,7 @@ flowchart LR
 - **Um adaptador por fonte**, declarado em configuração: URL base, padrão de links a seguir, frequência, nível de autoridade (N1–N3, ver [FONTES-OFICIAIS.md](FONTES-OFICIAIS.md)).
 - Adaptadores previstos: páginas gov.br (Plone: Portal NFS-e, Receita Federal, Fazenda), Planalto (incluindo republicações e retificações), DOU, base de normas da Receita (SIJUT), cgibs.gov.br, Portal NF-e.
 - **Barreira de origem**: lista fechada de domínios e órgãos oficiais aplicada no coletor *e* de novo na gravação do *snapshot*. Links de páginas oficiais que apontam para fora da lista não são seguidos. Qualquer documento fora da lista é rejeitado e gera alerta.
-- **Detecção de mudança**: requisição condicional (ETag/Last-Modified) e comparação de SHA-256 do conteúdo. Mudou → novo *snapshot*, nunca sobrescrita.
+- **Detecção de mudança**: requisição condicional (ETag/Last-Modified) quando a fonte suporta, e comparação de uma **impressão digital de conteúdo**: SHA-256 dos bytes para PDF/XLSX/ZIP, e SHA-256 do texto normalizado para HTML (sem `<head>`, scripts e atributos, limitado à área principal da página). A sondagem da Fase 0 mostrou páginas oficiais com bytes diferentes a cada leitura sem mudança real. Mudou → novo *snapshot* com os bytes originais, nunca sobrescrita.
 - **Arquivo versionado**: bytes originais em storage de objetos (S3-compatível) + metadados no Postgres. Isso permite responder "o que a NT 009 dizia em 15/08/2026?" e provar a origem de qualquer citação.
 - **Boas práticas de coleta**: respeitar robots.txt, limite de requisições por domínio, User-Agent genérico identificando o robô (sem dados pessoais), backoff em erro.
 - Cada mudança gera um **evento de mudança** (documento novo, nova versão, documento removido), que alimenta o feed "o que mudou" e os webhooks. Esse feed já é um produto útil antes de existir qualquer IA.
@@ -200,7 +200,7 @@ Ferramentas que devolvem **evidência bruta** (`buscar_fontes_oficiais`, `consul
 | LLM | `@anthropic-ai/sdk`, `claude-opus-5-5` | Citações via `search_result`; *structured outputs* para extração e vereditos; Batches API (50% do custo) para processar o acervo histórico na carga inicial |
 | Banco | PostgreSQL + pgvector + `unaccent` + `pg_trgm` | Um único banco para relacional, full-text e vetores |
 | Filas | pg-boss | Usa o próprio Postgres; um serviço a menos |
-| Storage | S3-compatível (MinIO local, S3/R2 em produção) | Bytes originais dos documentos |
+| Storage | S3-compatível com **Object Lock** (RustFS local; S3 ou outro provedor com Object Lock COMPLIANCE em produção) | Bytes originais dos documentos. O MinIO comunitário deixou de publicar imagens; o RustFS 1.0.5 passou no teste de retenção COMPLIANCE, `If-None-Match` e checksum SHA-256. O coletor recusa iniciar se o bucket não tiver retenção COMPLIANCE |
 | Parsing | pdf.js (`unpdf`), ExcelJS, parser XML, Cheerio | Playwright só se alguma fonte exigir JavaScript |
 | Embeddings | **Decisão em aberto** — a Anthropic não oferece modelo de embeddings | Opções: Voyage AI (API) ou modelo multilíngue auto-hospedado |
 | Observabilidade | OpenTelemetry + logs estruturados | Custo e latência por rota |

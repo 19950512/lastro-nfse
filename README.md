@@ -8,7 +8,7 @@ Plataforma que responde perguntas sobre NFS-e no Brasil **somente com base em ca
 
 Para saber o estado real da NFS-e hoje é preciso acompanhar pelo menos: Portal Nacional da NFS-e, resoluções do Comitê Gestor da NFS-e, Receita Federal, Comitê Gestor do IBS, Simples Nacional, Diário Oficial e a legislação da reforma tributária. Cada canal publica em um formato (notícia, PDF de Nota Técnica, planilha, XSD, resolução no DOU), e as datas mudam com frequência. Enquanto isso, perfis em redes sociais e blogs publicam interpretações que muitas vezes estão desatualizadas ou erradas, e empresas tomam decisões com base nelas.
 
-Exemplo real (16/11/2026): circulam três datas diferentes para a obrigatoriedade de IBS/CBS na NFS-e. A fonte oficial (cronograma do Ato Conjunto RFB/CGIBS nº 4/2026, divulgado pela Receita Federal) mostra que as três existem, mas cada uma vale para um grupo diferente de contribuintes. Quem divulga uma só data está generalizando. É esse o tipo de ruído a eliminar.
+Exemplo real (16/11/2026): circulam várias datas diferentes para a obrigatoriedade de IBS/CBS na NFS-e. O cronograma do Ato Conjunto RFB/CGIBS nº 4/2026 mostrava que todas existiam, mas cada uma valia para um grupo diferente de contribuintes. Depois, o Ato Conjunto nº 7/2026 (DOU de 13/11/2026) adiou as datas de 01/12/2026 para 01/01/2027 e 01/03/2027. Quem divulga uma só data está generalizando, e quem ainda divulga "1º de dezembro" está desatualizado. O levantamento manual deste plano só percebeu a mudança quando a sondagem automatizada da Fase 0 encontrou a notícia (ver [FONTES-OFICIAIS.md](docs/FONTES-OFICIAIS.md)). É esse o tipo de ruído a eliminar.
 
 ## Princípios inegociáveis
 
@@ -29,6 +29,37 @@ Exemplo real (16/11/2026): circulam três datas diferentes para a obrigatoriedad
 | [docs/VERIFICACAO-DE-ALEGACOES.md](docs/VERIFICACAO-DE-ALEGACOES.md) | Como a plataforma decide se uma alegação é verdadeira, falsa ou desatualizada |
 | [docs/SEGURANCA.md](docs/SEGURANCA.md) | Modelo de ameaças, XSS, CORS/CSRF, OWASP Top 10 (web, API, LLM), MCP, SSRF, LGPD e requisitos por fase |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Fases de entrega, métricas de qualidade, riscos e decisões em aberto |
+| [docs/SONDAGEM-FASE-0.md](docs/SONDAGEM-FASE-0.md) | Relatório gerado da validação técnica das fontes (robots.txt, acesso, formato, estabilidade) |
+
+## Como rodar
+
+Requer Node.js 24+ e pnpm 11. O código TypeScript roda direto no Node (remoção de tipos nativa), sem etapa de build.
+
+```sh
+pnpm install
+pnpm check                      # typecheck + lint + testes unitários
+
+pnpm infra:env                  # cria .env com senhas aleatórias (nunca sobrescreve)
+pnpm infra:subir                # Postgres + S3 com Object Lock (só em 127.0.0.1)
+pnpm preparar                   # papéis do banco, migrações e bucket WORM (idempotente)
+pnpm test:integracao            # testes contra Postgres e S3 reais
+
+pnpm sondar                     # Fase 0: valida as fontes e regenera docs/SONDAGEM-FASE-0.md
+pnpm coletar                    # coleta tudo e grava snapshots versionados
+pnpm coletar --fonte nfse-rtc --sem-documentos
+pnpm mudancas --desde 2026-11-01
+```
+
+`LASTRO_ARQUIVO=postgres` (padrão do `.env` gerado) grava em Postgres + S3; `disco` grava em `dados/arquivo`, sem precisar de Docker.
+
+| Pacote | Conteúdo |
+|---|---|
+| [packages/core](packages/core) | Lista fechada de origens oficiais e catálogo de fontes |
+| [packages/ingest](packages/ingest) | Cliente HTTPS protegido (SSRF, fixação de DNS, limites), robots.txt, extração de links, impressão digital de conteúdo, arquivo em disco e coletor |
+| [packages/db](packages/db) | Arquivo em Postgres + S3 WORM, migrações e papéis mínimos de banco |
+| [apps/worker](apps/worker) | CLI: `preparar`, `sondar`, `coletar`, `mudancas` |
+
+`coletar` sai com código 2 quando alguma URL falha ou é bloqueada por robots.txt, para o agendador transformar isso em alerta.
 
 ## Decisões já tomadas
 
@@ -37,4 +68,4 @@ Exemplo real (16/11/2026): circulam três datas diferentes para a obrigatoriedad
 - ISS fica para uma fase posterior: legislação municipal, alíquotas, apuração e sites de prefeituras. A lista de serviços da LC 116 entra só como tabela de códigos usada no leiaute da NFS-e.
 - Stack: TypeScript / Node.js 24.
 - LLM: Claude (Anthropic API), modelo `claude-opus-5-5`.
-- Esta rodada entrega apenas arquitetura e plano; sem código.
+- Fase 0 implementada (sondagem automatizada das fontes) junto com a base da Fase 1 (coleta segura, arquivo versionado, detecção de mudança). Ver o estado de cada item no [ROADMAP.md](docs/ROADMAP.md).
