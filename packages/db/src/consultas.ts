@@ -12,6 +12,8 @@ export interface Mudanca {
   readonly detectadoEm: string;
   readonly resumo: string;
   readonly anomalia: string | null;
+  /** invariant: preenchido só nos eventos de curadoria (`fato-aprovado`, `fato-corrigido`). */
+  readonly fatoId: string | null;
 }
 
 export interface FiltroMudancas {
@@ -128,6 +130,7 @@ interface LinhaMudanca {
   detectado_em: Date;
   resumo: string;
   anomalia: string | null;
+  fato_id: string | null;
 }
 
 const paraMudanca = (l: LinhaMudanca): Mudanca => ({
@@ -141,11 +144,12 @@ const paraMudanca = (l: LinhaMudanca): Mudanca => ({
   detectadoEm: l.detectado_em.toISOString(),
   resumo: l.resumo,
   anomalia: l.anomalia,
+  fatoId: l.fato_id,
 });
 
 const SELECAO_MUDANCA = `
   SELECT e.id, e.tipo, e.fonte_id, d.id AS documento_id, d.url, e.snapshot_anterior, e.snapshot_novo,
-         e.detectado_em, e.resumo, e.anomalia
+         e.detectado_em, e.resumo, e.anomalia, e.fato_id
     FROM evento_mudanca e JOIN documento d ON d.id = e.documento_id`;
 
 interface LinhaResumoDocumento {
@@ -171,7 +175,7 @@ const SELECAO_DOCUMENTO = `
     ) s ON true
     LEFT JOIN LATERAL (SELECT max(verificado_em) AS ultima_verificacao_em FROM verificacao_coleta WHERE documento_id = d.id) v ON true
     LEFT JOIN LATERAL (
-      SELECT tipo FROM evento_mudanca WHERE documento_id = d.id ORDER BY detectado_em DESC, id DESC LIMIT 1
+      SELECT tipo FROM evento_mudanca WHERE documento_id = d.id AND tipo NOT IN ('fato-aprovado', 'fato-corrigido') ORDER BY detectado_em DESC, id DESC LIMIT 1
     ) ev ON true`;
 
 const paraResumoDocumento = (l: LinhaResumoDocumento): ResumoDocumento => ({

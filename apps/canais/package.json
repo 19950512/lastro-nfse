@@ -1,0 +1,12 @@
+{
+  "name": "@lastro/canais",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@lastro/core": "workspace:*",
+    "@lastro/db": "workspace:*",
+    "@lastro/llm": "workspace:*",
+    "fastify": "^5.12.0"
+  }
+}

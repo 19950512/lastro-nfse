@@ -1,0 +1,15 @@
+{
+  "name": "@lastro/llm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.7.0",
+    "@lastro/core": "workspace:*",
+    "@lastro/db": "workspace:*",
+    "zod": "^4.6.0"
+  }
+}

@@ -10,6 +10,10 @@ export interface EventoParaEnvio {
   readonly url: string;
   readonly detectadoEm: string;
   readonly anomalia: string | null;
+  /** invariant: só nos eventos de curadoria (`fato-aprovado`, `fato-corrigido`). */
+  readonly fatoId?: string | null | undefined;
+  /** why: alerta por tema do cliente; o nome escolhido por ele identifica o alerta na mensagem. */
+  readonly alerta?: { readonly id: string; readonly nome: string } | null | undefined;
 }
 
 const ROTULOS: Record<TipoEvento, string> = {
@@ -18,6 +22,8 @@ const ROTULOS: Record<TipoEvento, string> = {
   'link-removido': 'Link removido',
   'documento-indisponivel': 'Documento indisponível',
   'documento-restabelecido': 'Documento restabelecido',
+  'fato-aprovado': 'Fato aprovado pela curadoria',
+  'fato-corrigido': 'Fato corrigido pela curadoria (recall)',
 };
 
 // why: no mrkdwn do Slack, &, < e > abrem links e menções; texto vindo das fontes precisa ir escapado.
@@ -36,10 +42,14 @@ export function montarCorpo(evento: EventoParaEnvio, formato: FormatoWebhook, ur
   // why: laço em vez de /\/+$/, que é quadrático numa sequência longa de barras (alerta js/polynomial-redos).
   while (base.endsWith('/')) base = base.slice(0, -1);
   const linkDocumento = `${base}/v1/documentos/${evento.documentoId}`;
+  const fatoId = evento.fatoId ?? null;
+  const linkFato = fatoId === null ? null : `${base}/v1/fatos/${fatoId}`;
+  const alerta = evento.alerta ?? null;
   if (formato === 'slack') {
-    const alerta = evento.anomalia === null ? '' : ' (marcado para revisão)';
+    const revisao = evento.anomalia === null ? '' : ' (marcado para revisão)';
+    const prefixo = alerta === null ? '' : `[${escaparSlack(alerta.nome)}] `;
     return JSON.stringify({
-      text: `${ROTULOS[evento.tipo]}${alerta} em ${escaparSlack(evento.fonteId)}: ${escaparSlack(evento.url)}\nDetalhes: ${linkDocumento}`,
+      text: `${prefixo}${ROTULOS[evento.tipo]}${revisao} em ${escaparSlack(evento.fonteId)}: ${escaparSlack(evento.url)}\nDetalhes: ${linkFato ?? linkDocumento}`,
     });
   }
   return JSON.stringify({
@@ -48,6 +58,12 @@ export function montarCorpo(evento: EventoParaEnvio, formato: FormatoWebhook, ur
     fonte_id: evento.fonteId,
     detectado_em: evento.detectadoEm,
     revisao_pendente: evento.anomalia !== null,
-    links: { documento: linkDocumento, mudancas: `${base}/v1/mudancas?desde=${encodeURIComponent(evento.detectadoEm)}` },
+    ...(fatoId === null ? {} : { fato_id: fatoId }),
+    ...(alerta === null ? {} : { alerta: { id: alerta.id, nome: alerta.nome } }),
+    links: {
+      documento: linkDocumento,
+      mudancas: `${base}/v1/mudancas?desde=${encodeURIComponent(evento.detectadoEm)}`,
+      ...(linkFato === null ? {} : { fato: linkFato }),
+    },
   });
 }

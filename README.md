@@ -39,7 +39,7 @@ Requer Node.js 24+ e pnpm 11. O código TypeScript roda direto no Node (remoçã
 pnpm install
 pnpm check                      # typecheck + lint + testes unitários
 
-pnpm infra:env                  # cria .env com senhas aleatórias (nunca sobrescreve)
+pnpm infra:env                  # cria .env com senhas aleatórias (nunca sobrescreve; só acrescenta senhas de papéis novos)
 pnpm infra:subir                # Postgres + S3 com Object Lock (só em 127.0.0.1)
 pnpm preparar                   # papéis do banco, migrações e bucket WORM (idempotente)
 pnpm test:integracao            # testes contra Postgres e S3 reais
@@ -49,13 +49,65 @@ pnpm coletar                    # coleta tudo e grava snapshots versionados
 pnpm coletar --fonte nfse-rtc --sem-documentos
 pnpm mudancas --desde 2026-11-01
 
-pnpm api                        # API somente leitura + tela em http://127.0.0.1:8080/painel
+pnpm processar                  # extrai trechos, tabelas e leiaute dos snapshots novos
+pnpm lastro anomalia listar     # mudanças anômalas fora do índice até revisão humana
+pnpm lastro anomalia liberar --evento <uuid> --revisor <nome> --motivo "conferido na fonte"
+
+pnpm lastro plano listar         # planos e limites (padrao e portal-publico vêm na migração, com valores provisórios)
+pnpm lastro plano salvar --id pro --nome Pro --limite-minuto 120 --cota-mensal 5000 --cota-verificacoes 2000 --orcamento-mensal 200 --max-alertas 50
+pnpm lastro cliente criar --nome "Empresa X" [--plano pro] [--cota-mensal 1000]   # limite informado vira exceção ao plano
+pnpm lastro cliente atualizar --id <uuid> --plano padrao [--cota-mensal plano]   # "plano" remove a exceção
+pnpm lastro chave criar --cliente <uuid> --escopo leitura --escopo perguntas --escopo verificacoes --escopo alertas   # segredo aparece uma vez
+pnpm lastro uso [--mes 2026-11]  # uso medido por cliente no mês (base da cobrança)
+pnpm lastro chave revogar --id <uuid>
+pnpm api                        # API em http://127.0.0.1:8080 (chave obrigatória) + tela /painel (só local)
+pnpm lastro expurgar            # apaga consultas e verificações com retenção vencida (LGPD)
+
+pnpm lastro normas              # grafo normativo por regras (sem LLM): identifica cada ato e propõe relações
+pnpm lastro fatos propor        # propõe prazos e obrigações com o Claude (5 documentos N1/N2 por rodada)
+pnpm lastro curador criar --emissor https://sso.exemplo --sujeito <sub> --nome "Ana" [--papel supervisor]
+pnpm admin                      # painel de curadoria em http://127.0.0.1:8081 (SSO + MFA obrigatórios)
+
+pnpm lastro cliente criar --nome "Portal público" --plano portal-publico   # o id vai em LASTRO_PORTAL_CLIENTE_ID
+pnpm portal                     # portal público em http://127.0.0.1:8082 (CAPTCHA obrigatório fora de 127.0.0.1)
+pnpm lastro slack vincular --team T0123ABCD --cliente <uuid>
+pnpm canais                     # comando /lastro do Slack em http://127.0.0.1:8083/slack/comandos (exige LASTRO_SLACK_SEGREDO_ASSINATURA)
+
+pnpm mcp                        # servidor MCP por stdio (uso local; LASTRO_MCP_CLIENTE_ID libera perguntar_nfse)
+pnpm mcp:http                   # MCP remoto (Streamable HTTP + OAuth); exige LASTRO_MCP_URL_RECURSO, _OAUTH_EMISSOR, _OAUTH_JWKS
+
 pnpm lastro webhook adicionar --url https://seu-receptor/lastro [--formato slack] [--fonte nfse-rtc]
 pnpm lastro webhook listar
 pnpm notificar                  # envia aos assinantes os eventos pendentes
 ```
 
-Agendamento sugerido: `pnpm coletar; pnpm notificar` a cada hora. As duas saem com código 2 quando há falha, para virar alerta.
+Agendamento sugerido: `pnpm coletar; pnpm processar; pnpm lastro normas; pnpm notificar` a cada hora e `pnpm lastro expurgar` uma vez por dia. `coletar`, `processar` e `notificar` saem com código 2 quando há falha, para virar alerta.
+
+Exemplo de pergunta (precisa de credencial da Anthropic no ambiente da API, ex.: `ANTHROPIC_API_KEY`; sem ela a rota responde 503):
+
+```sh
+curl -s http://127.0.0.1:8080/v1/perguntas -H "authorization: Bearer $LASTRO_CHAVE" \
+  -H 'content-type: application/json' -d '{"pergunta":"O que é o campo indFinal?"}'
+```
+
+A resposta traz o texto com marcadores `[n]`, e cada fonte citada traz órgão, nível, URL, trecho exato, página ou seção, data de coleta e SHA-256 do arquivo original. Sem evidência oficial, a resposta é "Não encontrei a resposta em fonte oficial."
+
+Verificação de alegação (escopo `verificacoes`) e link público, que o dono decide gerar:
+
+```sh
+curl -s http://127.0.0.1:8080/v1/verificacoes -H "authorization: Bearer $LASTRO_CHAVE" \n  -H 'content-type: application/json' -d '{"texto":"Desde 1º de setembro o Simples é obrigado a usar o emissor nacional.","data_conteudo":"2026-09-10"}'
+curl -s -X POST http://127.0.0.1:8080/v1/verificacoes/<id>/compartilhamento -H "authorization: Bearer $LASTRO_CHAVE"
+```
+
+Alerta por tema (escopo `alertas`): o cliente recebe no próprio webhook (ou no Slack) as mudanças cujo texto novo cita os termos, e os fatos curados do tema. Plano, limites e uso: `GET /v1/uso`.
+
+```sh
+curl -s http://127.0.0.1:8080/v1/alertas -H "authorization: Bearer $LASTRO_CHAVE" -H 'content-type: application/json' \n  -d '{"nome":"Cronograma IBS/CBS","url":"https://hooks.slack.com/services/…","formato":"slack","termos":["cronograma IBS/CBS"],"temas":["cronograma-ibs-cbs"]}'
+```
+
+Extensão de navegador: em `chrome://extensions`, "Carregar sem compactação" na pasta [apps/extensao/src](apps/extensao/src) e informar o endereço do portal nas opções.
+
+Cada alegação sai com veredito, trechos oficiais exatos e, quando o modelo propôs um veredito sem a evidência mínima, `rebaixado: true` e SEM RESPALDO OFICIAL. Fatos e relações só contam depois de aprovados por dois curadores no painel (`pnpm admin`); o recall de um fato aparece no link público e vira evento `fato-corrigido` para os webhooks.
 
 O receptor confere o cabeçalho `lastro-assinatura: t=<unix>,v1=<hmac>`: HMAC-SHA256 de `<t>.<corpo>` com o segredo mostrado no cadastro, recusando `t` com mais de 5 minutos de diferença. Referência: `verificarAssinatura` em [packages/webhooks/src/assinatura.ts](packages/webhooks/src/assinatura.ts).
 
@@ -65,10 +117,18 @@ O receptor confere o cabeçalho `lastro-assinatura: t=<unix>,v1=<hmac>`: HMAC-SH
 |---|---|
 | [packages/core](packages/core) | Lista fechada de origens oficiais e catálogo de fontes |
 | [packages/ingest](packages/ingest) | Cliente HTTPS protegido (SSRF, fixação de DNS, limites), robots.txt, extração de links, impressão digital de conteúdo, arquivo em disco e coletor |
-| [packages/db](packages/db) | Arquivo em Postgres + S3 WORM, consultas de leitura, migrações e papéis mínimos de banco |
-| [packages/webhooks](packages/webhooks) | Assinaturas, HMAC, envio protegido contra SSRF e despacho com novas tentativas |
-| [apps/worker](apps/worker) | CLI: `preparar`, `sondar`, `coletar`, `mudancas`, `webhook`, `notificar` |
-| [apps/api](apps/api) | API REST somente leitura (`/v1/...`) e tela `/painel` |
+| [packages/parsers](packages/parsers) | PDF, XLSX, ZIP, XSD e HTML com limites contra zip bomb, XXE e PDF malicioso; trechos por artigo/seção, tabelas dos anexos e dicionário do leiaute |
+| [packages/db](packages/db) | Arquivo em Postgres + S3 WORM, índice de conhecimento, busca, clientes e chaves com RLS, migrações e papéis mínimos de banco |
+| [packages/normas](packages/normas) | Identidade de atos normativos e relações (altera, revoga, prorroga) por regras, sem LLM |
+| [packages/llm](packages/llm) | Roteador, geração com citações (Claude), checagem pós-geração, verificação de alegações com regras de veredito em código, extração de fatos para curadoria e serviços com cotas |
+| [packages/webhooks](packages/webhooks) | Assinaturas do operador e alertas por tema dos clientes, HMAC, envio protegido contra SSRF e despacho com novas tentativas |
+| [apps/worker](apps/worker) | CLI: `preparar`, `sondar`, `coletar`, `processar`, `normas`, `fatos`, `curador`, `mudancas`, `anomalia`, `plano`, `cliente`, `chave`, `uso`, `slack`, `expurgar`, `webhook`, `notificar` |
+| [apps/api](apps/api) | API REST autenticada (`/v1/...`), página pública de verificação compartilhada e tela `/painel` local |
+| [apps/admin](apps/admin) | Painel de curadoria: SSO (OIDC + PKCE) com MFA, dupla aprovação, recall; HTML sem script |
+| [apps/mcp](apps/mcp) | Servidor MCP (stdio e Streamable HTTP com OAuth), só ferramentas de leitura |
+| [apps/portal](apps/portal) | Portal público anônimo de perguntas e verificações, com CAPTCHA e limites por IP |
+| [apps/canais](apps/canais) | Bot de Slack (`/lastro`): pergunta e checagem com assinatura do Slack e resposta efêmera |
+| [apps/extensao](apps/extensao) | Extensão de navegador "checar este post" (Manifest V3) |
 
 `coletar` sai com código 2 quando alguma URL falha ou é bloqueada por robots.txt, para o agendador transformar isso em alerta.
 
@@ -79,4 +139,7 @@ O receptor confere o cabeçalho `lastro-assinatura: t=<unix>,v1=<hmac>`: HMAC-SH
 - ISS fica para uma fase posterior: legislação municipal, alíquotas, apuração e sites de prefeituras. A lista de serviços da LC 116 entra só como tabela de códigos usada no leiaute da NFS-e.
 - Stack: TypeScript / Node.js 24.
 - LLM: Claude (Anthropic API), modelo `claude-opus-5-5`.
-- Fase 0 (sondagem automatizada das fontes) e Fase 1 (monitor: coleta segura, arquivo versionado WORM, detecção de mudança e de anomalia, API do feed, webhooks e tela) implementadas. Ver o estado de cada item e as pendências no [ROADMAP.md](docs/ROADMAP.md).
+- Fase 0 (sondagem automatizada das fontes) e Fase 1 (monitor: coleta segura, arquivo versionado WORM, detecção de mudança e de anomalia, API do feed, webhooks e tela) implementadas.
+- Fase 2 (perguntas com fonte: parsers, índice, busca léxica, geração com citações e checagem, API autenticada e MCP) implementada, com o braço vetorial da busca aguardando a decisão de embeddings e a geração ainda sem validação contra a API real do Claude. Ver o estado de cada item e as pendências no [ROADMAP.md](docs/ROADMAP.md).
+- Fase 3 (grafo normativo, curadoria com dupla aprovação, fatos aprovados, verificador de alegações, link compartilhável e recall) implementada; o painel ainda não foi ligado a um provedor de SSO real e a verificação ainda não rodou contra a API real do Claude.
+- Fase 4 (planos e medição de uso, alertas por tema, portal público com CAPTCHA, bot de Slack, extensão de navegador e `security.txt`) implementada; faltam teste de intrusão externo e DAST antes de abrir o portal, escolher o provedor de CAPTCHA, criar o app do Slack, e WhatsApp e Teams.

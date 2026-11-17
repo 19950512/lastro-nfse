@@ -1,6 +1,6 @@
 import type { PoolConfig } from 'pg';
 
-export type Papel = 'admin' | 'coletor' | 'leitor' | 'notificador';
+export type Papel = 'admin' | 'coletor' | 'leitor' | 'notificador' | 'processador' | 'api' | 'curadoria';
 
 export interface ConfigS3 {
   readonly endpoint: string;

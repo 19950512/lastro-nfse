@@ -20,4 +20,13 @@ export default tseslint.config(
     files: ['eslint.config.js'],
     extends: [tseslint.configs.disableTypeChecked],
   },
+  {
+    // why: a extensão roda no navegador como JavaScript sem build; o contrato tipado dela fica em url.d.ts.
+    files: ['apps/extensao/src/**/*.js'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'module',
+      globals: { chrome: 'readonly', document: 'readonly', HTMLInputElement: 'readonly', URL: 'readonly' },
+    },
+  },
 );

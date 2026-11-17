@@ -35,30 +35,107 @@ Estado em 16/11/2026: ✅ feito · 🟡 parcial · ⬜ pendente.
 Pendências conhecidas, fora do escopo mínimo da fase:
 - **Credenciais e rede:** credencial S3 própria do coletor sem permissão de apagar; proxy de egresso.
 - **Segredos:** gerenciador de segredos em produção (hoje o local usa `.env`); segredo de webhook cifrado no banco.
-- **API:** autenticação e limite de requisições. Por isso ela recusa escutar fora de 127.0.0.1 (requisitos da Fase 2).
-- **Parsers:** limites de ZIP/XML, que entram com os parsers da Fase 2.
+- ~~**API:** autenticação e limite de requisições~~ e ~~**Parsers:** limites de ZIP/XML~~: resolvidos na Fase 2.
 
 **Valor**: substitui a ronda manual por 5–7 sites. Funciona sem IA.
 
 ## Fase 2 — Perguntas com fonte
 
-- Parsers, trechos, busca híbrida, tabelas estruturadas dos anexos, dicionário do leiaute.
-- Geração com citações, checagem pós-geração.
-- API REST (`/v1/perguntas`, `/v1/busca`, `/v1/referencias`, `/v1/leiaute`) e servidor MCP com as ferramentas correspondentes.
+Estado em 17/11/2026: ✅ feito · 🟡 parcial · ⬜ pendente.
+
+- ✅ **Parsers** ([packages/parsers](../packages/parsers)) com os limites de SEGURANCA.md §8: ZIP lido com zlib e teto de saída por arquivo e total (zip bomb, inclusive com tamanho declarado falso), recusa de `..`, caminho absoluto, cifragem e zip64; XML sem DTD nem entidade (XXE e "billion laughs" recusados); XLSX só com valores (fórmula e macro ignoradas); PDF em `worker_thread` com teto de memória e tempo. Na coleta real, 129 snapshots extraídos sem falha.
+- ✅ **Trechos por estrutura**: lei por artigo (`secao = "Art. 62"`, texto riscado do Planalto descartado), PDF por página e seção numerada, HTML por títulos.
+- ✅ **Tabelas estruturadas dos anexos** (77 tabelas na coleta real; Anexo VIII com 1611 linhas por item LC 116 × NBS × indOp × cClassTrib) e **dicionário do leiaute** a partir dos XSD (1650 campos no pacote v1.01, com caminho, tipo, ocorrências, descrição e versão).
+- ✅ **Índice imutável e revisão de anomalia**: extração, trechos, tabelas e campos só aceitam inserção; versão marcada como anômala fica fora do índice (a anterior continua valendo) até `pnpm lastro anomalia liberar`.
+- 🟡 **Busca híbrida**: braço léxico pronto (full-text português com `unaccent`, peso por raridade do termo, identificadores como "NT 009", "cClassTrib", "IBS/CBS" por trigramas, fusão RRF, filtros por fonte e nível). Bom para identificador, artigo e código; fraco para pergunta em linguagem natural. O braço vetorial depende da decisão em aberto nº 1 (embeddings) e entra na mesma fusão.
+- ✅ **Geração com citações** ([packages/llm](../packages/llm)): `claude-opus-5-5`, trechos como blocos `search_result` com citação nativa, `effort` por rota, `fallbacks` do servidor para recusa, nenhuma ferramenta oferecida ao modelo. Roteador recusa ISS municipal e consultoria sem chamar o modelo; sem evidência, responde "não encontrei" sem chamar o modelo. CPF, CNPJ, e-mail e telefone mascarados antes do envio e do registro.
+- ✅ **Checagem pós-geração** determinística: citação conferida contra o texto realmente enviado, frase sem citação removida (conectivo só fica se cada número dele estiver no trecho citado ao lado), origem oficial e hash obrigatórios (senão a resposta é rejeitada), aviso de fonte velha pelo SLA, de documento indisponível e de prazo apoiado só em N3; links externos, imagens e HTML removidos da saída.
+- ✅ **API** (`/v1/busca`, `/v1/referencias`, `/v1/referencias/{tabela}`, `/v1/leiaute/campos/{nome}`, `POST /v1/perguntas`, `GET /v1/perguntas/{id}`) e **MCP** ([apps/mcp](../apps/mcp)) com `perguntar_nfse`, `buscar_fontes_oficiais`, `obter_documento`, `listar_mudancas`, `consultar_codigo`, `explicar_campo_leiaute` e os recursos `nfse://fontes`, `nfse://mudancas/recentes`, `nfse://documento/{id}`.
+- ✅ **Segurança da fase**:
+  - chave de API por cliente (só o hash SHA-256 no banco, comparação em tempo constante, escopos `leitura` e `perguntas`), exigida em toda rota de dados;
+  - limite por chave e por IP, cota mensal de perguntas e orçamento mensal por cliente, disjuntor global de gasto diário;
+  - isolamento por cliente com RLS em `consulta_log` (papel `lastro_api` sem BYPASSRLS; sem cliente na transação, nada é lido nem gravado);
+  - MCP remoto com OAuth 2.1 como servidor de recurso: token só aceito se emitido para este recurso (sem repasse), metadados RFC 9728, Host e Origin conferidos, sem sessão;
+  - saída do LLM sanitizada;
+  - testes adversariais de injeção (pergunta e documento) na checagem.
+- ✅ **Retenção (LGPD)**: consultas expiram em `LASTRO_RETENCAO_CONSULTAS_DIAS` (padrão 30) e `pnpm lastro expurgar` apaga as vencidas.
+
+Pendências conhecidas da Fase 2:
+- **Nenhuma resposta gerada foi testada contra a API real do Claude.** Os testes usam um modelo falso; a máquina de desenvolvimento não tinha credencial da Anthropic. Antes de abrir `/v1/perguntas` a clientes: rodar perguntas reais, medir citação e abstenção.
+- **Conjunto de referência** (perguntas reais com resposta esperada e casos adversariais avaliados pelo modelo real) depende de especialista (Fase 0). Os testes adversariais atuais cobrem a checagem determinística, não o comportamento do modelo.
+- **Embeddings** (decisão nº 1) e **OCR**: 4 PDFs oficiais são digitalizados, sem camada de texto (Resoluções CGNFS-e 4/2024, 7/2025 e 8/2025 e um Ato Conjunto RFB/CGIBS) e ficam fora do índice.
+- **Grafo normativo** (Fase 3): a regra "citação de ato revogado é rejeitada" e o campo `conflitos` dependem dele.
+- **Autorização do MCP**: o servidor de autorização OAuth é externo e precisa ser escolhido e configurado (emissor, JWKS e a claim `lastro_cliente_id`).
+- **Operação**:
+  - limites de taxa em memória, por processo;
+  - cache de respostas idênticas;
+  - PDF em contêiner sem rede (hoje só `worker_thread` com teto de memória e tempo);
+  - busca leva cerca de 1 s por pergunta na base local.
 
 ## Fase 3 — Fatos curados e verificador
 
-- Extração de metadados normativos, grafo normativo, fila e tela de curadoria.
-- Pipeline de verificação de alegações com vereditos e link compartilhável.
-- `verificar_alegacao` no MCP e `/v1/verificacoes` na API.
+Estado em 17/11/2026: ✅ feito · 🟡 parcial · ⬜ pendente.
+
+- ✅ **Metadados normativos e grafo por regras** ([packages/normas](../packages/normas), `pnpm lastro normas`, sem LLM): identidade do ato pelo cabeçalho oficial em caixa alta (chave canônica, ex.: `resolucao-cgibs-11-2026`; minuta não ganha identidade) e relações `altera`, `revoga`, `prorroga`, `regulamenta` só de cláusulas ativas ("Fica revogada a…", "Altera a…", "…passa a vigorar com…"). Revogação de dispositivo vira `altera`; revogação com data futura ("a partir de 1º de janeiro de 2033") guarda `efeito_em`; anotações passivas do texto compilado do Planalto ("Revogado pela…", "Vide…") são ignoradas. Na base local: 96 versões analisadas, 49 atos identificados, 104 relações propostas, 12 com destino arquivado.
+- ✅ **Fatos propostos pelo Claude** (`pnpm lastro fatos propor`): prazos, obrigações, vigências, valores e pendências, só de fontes N1/N2, com citação relocalizada como substring exata do trecho.
+- ✅ **Curadoria com dupla aprovação** ([apps/admin](../apps/admin), `pnpm admin`): fila, trecho original ao lado com a evidência destacada, aprovação, rejeição, proposta manual de fato e recall. Regras no banco (segunda camada): dois curadores distintos, quem propôs não aprova, decisão presa ao curador da sessão (`lastro.curador_id`), só supervisor faz recall e só do aprovado, evidência literal no trecho, tudo só inserção. Fato cujo documento mudou depois da aprovação sai como `evidencia_atual = false` e não sustenta FALSO nem DESATUALIZADO.
+- ✅ **Verificação de alegações** (`POST /v1/verificacoes`, `verificar_alegacao` no MCP): extração de alegações (structured outputs), evidência por alegação (fatos aprovados → grafo → busca), veredito proposto pelo modelo e **regras de evidência em código**, que só rebaixam (para SEM RESPALDO OFICIAL): citação literal do texto enviado, origem oficial com hash, FALSO com N1/N2 e fato aprovado para prazo/obrigação, DESATUALIZADO com relação aprovada já em efeito, AINDA NÃO DEFINIDO com trecho que diz que a definição está pendente, trecho de ato revogado não sustenta CONFIRMADO, explicação com número sem lastro trocada pela padrão. ISS municipal é decidido em código. O texto enviado é mascarado (CPF, CNPJ, e-mail, telefone), não vira fonte e não aparece no link público.
+- ✅ **Link compartilhável** (`/verificacoes/{token}` e `/v1/publico/verificacoes/{token}`): gerado só pelo dono, só o hash do token no banco, revogável, expira com a retenção; HTML sem script, CSP `default-src 'none'`, tudo escapado, `noindex`, limite por IP.
+- ✅ **Recall de veredito**: revogar um fato aprovado conta as verificações e respostas que o usaram, publica o evento `fato-corrigido` no feed (webhooks) e faz o link público e `GET /v1/verificacoes/{id}` exibirem a correção.
+- ✅ **Fatos na API, MCP e perguntas**: `/v1/fatos`, `/v1/fatos/temas`, `/v1/fatos/{id}`, `consultar_prazo` no MCP; a rota de prazo de `/v1/perguntas` usa fatos aprovados primeiro, e frase apoiada só em ato revogado (grafo aprovado) sai da resposta.
+- ✅ **Segurança da fase**: painel em origem e processo separados com SSO OIDC (code + PKCE + state + nonce) e MFA exigido pelo `amr` do token (padrão `hwk`, chave física); RBAC curador/supervisor no código e no banco; cookies `__Host-` HttpOnly Secure SameSite=Strict; anti-CSRF por sessão + conferência de `Origin` em todo POST; CSP sem script no painel e no link; testes de XSS nos links compartilháveis e no painel; recall implementado; papel de banco `lastro_curadoria` sem UPDATE/DELETE em fatos e decisões; escopos novos `verificacoes` (chave) e `nfse:verificacoes` (OAuth).
+
+Pendências conhecidas da Fase 3:
+- **Nada da verificação nem da extração de fatos rodou contra a API real do Claude** (sem credencial nesta máquina). As regras em código foram testadas com modelo roteirizado e na base real de teste; antes de abrir `/v1/verificacoes`: rodar alegações reais e o conjunto de referência.
+- **SSO real**: o painel não foi ligado a um provedor OIDC de verdade. Escolher o provedor, confirmar o valor de `amr` que ele emite para WebAuthn (o padrão `hwk` bloqueia login até isso bater) e cadastrar os curadores (`pnpm lastro curador criar`).
+- **Quem cura** (decisão em aberto nº 3): sem curadores, nenhum fato ou relação é aprovado, e FALSO/DESATUALIZADO nunca saem (o sistema rebaixa para SEM RESPALDO OFICIAL, como deve).
+- **Grafo**: o extrator de regras é conservador; relação com destino não arquivado fica sem `destino_resolvido` (Resolução CGSN 189/191 não está nas fontes coletadas). Relação proposta manualmente pelo painel e o campo `conflitos` da resposta ficaram de fora.
+- **Imagem/print** como entrada da verificação (fase posterior, já prevista em VERIFICACAO-DE-ALEGACOES.md).
+- Recall de **relação** aprovada (hoje só fato) e aviso ativo aos clientes cujas verificações usaram o fato (hoje: evento no feed e aviso no link).
 
 ## Fase 4 — Produto
 
-- Multi-cliente: chaves de API, limites, medição de uso, planos.
-- Interface web pública de perguntas e verificações.
-- Alertas por tema (ex.: "me avise de qualquer mudança no cronograma IBS/CBS da NFS-e").
-- Canais: bot de WhatsApp/Slack/Teams, extensão de navegador "checar este post".
-- Expansões possíveis, sempre com fontes oficiais: NF-e/NFC-e da reforma, jurisprudência de tribunais.
+Estado em 17/11/2026: ✅ feito · 🟡 parcial · ⬜ pendente.
+
+- ✅ **Multi-cliente: planos, limites e medição de uso** (migração [008](../packages/db/migracoes/008_produto.sql)):
+  - tabela `plano` (requisições por minuto, cota mensal de perguntas, cota mensal de verificações, orçamento mensal em dólar, máximo de alertas); o limite efetivo é a exceção do cliente, se houver, senão o valor do plano. Mudar um plano muda todos os clientes do plano sem exceção;
+  - pergunta e verificação têm cotas separadas; o orçamento em dólar é um só;
+  - medição diária em `uso_diario`, sem conteúdo de cliente, gravada por gatilho na mesma transação da consulta. A cota mensal e o disjuntor global passaram a ler dessa tabela. Antes liam `consulta_log`, que o expurgo da LGPD apaga: com retenção menor que um mês, o expurgo zerava parte da cota;
+  - requisições contadas em memória e gravadas em lote a cada 15 s;
+  - `GET /v1/uso` (qualquer chave do cliente) e CLI `pnpm lastro plano salvar|listar`, `cliente atualizar` e `uso --mes` (relatório para cobrança).
+- ✅ **Alertas por tema** (`POST|GET|DELETE /v1/alertas`, escopo de chave `alertas`, máximo de alertas pelo plano): webhook no formato `lastro` ou `slack`, assinado com HMAC, com a mesma validação de destino da Fase 1. Um alerta casa com o evento por:
+  - **termos**: o termo aparece no texto que entrou na versão nova (trecho ausente da versão anterior já processada) ou no enunciado do fato do evento;
+  - **temas de fatos curados**: fato do tema aprovado ou revogado, ou mudança, posterior à aprovação, num documento que sustenta fato aprovado do tema.
+  Evento novo `fato-aprovado`, publicado pelo banco na segunda aprovação. Com RLS, cada cliente só vê os próprios alertas, e a API não lê o segredo.
+- ✅ **Portal público** ([apps/portal](../apps/portal), `pnpm portal`): perguntas e verificações anônimas em origem e processo próprios.
+  - CAPTCHA Turnstile ou hCaptcha conferido no servidor: falha fechada e host conferido;
+  - `Origin` conferido em todo POST;
+  - limites por IP por minuto e, para o que chama o modelo, por hora;
+  - cliente próprio no plano `portal-publico`, com cota, orçamento e disjuntor global;
+  - a verificação vira link compartilhado na página canônica da API;
+  - um único script próprio, que preenche o texto vindo da extensão.
+- 🟡 **Canais**:
+  - ✅ Slack ([apps/canais](../apps/canais), comando `/lastro`): assinatura do Slack com janela de 5 min; reenvio do Slack ignorado; workspace vinculado a um cliente (`pnpm lastro slack vincular`); resposta efêmera só na `response_url` do próprio Slack; texto escapado (sem `<!channel>`); limite por usuário por hora e por workspace por minuto;
+  - ✅ extensão de navegador ([apps/extensao](../apps/extensao), Manifest V3): "Checar no Lastro" num texto selecionado abre `/verificar` do portal com o texto no fragmento da URL, que não vai ao servidor. Permissões: só menu de contexto e armazenamento;
+  - ⬜ WhatsApp e Teams: dependem de conta no Meta Business e no Azure Bot Service.
+- 🟡 **Segurança da fase**: ✅ CAPTCHA e proteção contra abuso; ✅ `/.well-known/security.txt` (RFC 9116) na API e no portal, com validade obrigatória e sem renovação automática; ⬜ teste de intrusão externo; ⬜ DAST (OWASP ZAP), que precisa do ambiente de homologação, ainda inexistente.
+- ⬜ Expansões, sempre com fontes oficiais: NF-e/NFC-e da reforma, jurisprudência de tribunais.
+
+Teste local de ponta a ponta (17/11/2026, banco de desenvolvimento, sem credencial da Anthropic): `GET /v1/uso`, criação e remoção de alerta (destino que resolve para 127.0.0.1 recusado pelo DNS real), `security.txt`, portal com POST sem `Origin` recusado e pergunta sobre ISS recusada pelo roteador, registrada com `canal = portal` e medida em `uso_diario`, e comando do Slack assinado (ajuda, workspace sem vínculo, assinatura errada).
+
+Pendências conhecidas da Fase 4:
+- **Antes de abrir o portal ao público:** teste de intrusão externo e DAST.
+- **Validação com o modelo real:** nenhuma resposta do portal nem do Slack foi gerada pela API real do Claude; é a mesma pendência das fases 2 e 3.
+- **Planos:** os valores de `padrao` e `portal-publico` são provisórios e dependem do modelo de negócio (decisão nº 4).
+- **CAPTCHA:** escolher o provedor e criar as chaves. Sem CAPTCHA, o portal só sobe em 127.0.0.1.
+- **Slack:** criar o app (slash command apontando para `<canais>/slack/comandos`). Ainda não há instalação por OAuth; o workspace é vinculado à mão, pelo `team_id`.
+- **Extensão:** publicar nas lojas (o Firefox exige `browser_specific_settings`). Enquanto não houver domínio, cada usuário configura o endereço do portal.
+- **Medição:** as requisições ficam em memória até o lote; se o processo cair, perde-se até 15 s de contagem. Perguntas e verificações não são afetadas.
+- **Alertas:**
+  - a comparação é por trecho: por artigo em texto legal, mas, em HTML sem estrutura, o bloco inteiro conta como novo quando muda;
+  - só eventos dos últimos 14 dias são reavaliados;
+  - versão anômala só dispara alerta depois de liberada;
+  - e-mail continua fora, porque depende de escolher o provedor de envio.
 
 ## Fase 5 — ISS
 
@@ -98,7 +175,7 @@ O conjunto de referência roda a cada mudança de prompt, modelo ou pipeline; um
 ## Decisões em aberto
 
 1. **Embeddings**: Voyage AI (API, sem infraestrutura) ou modelo multilíngue auto-hospedado (sem custo por chamada, mais operação).
-2. **Modelo para tarefas em lote**: tudo em `claude-opus-5-5` (padrão atual) ou usar um modelo mais barato (ex.: `claude-haiku-5-5`) na extração em massa da carga histórica, medindo antes a perda de qualidade.
+2. **Modelo para tarefas em lote**: tudo em `claude-opus-5-5` (padrão atual) ou usar um modelo mais barato (ex.: `claude-haiku-5-5`) na extração em massa da carga histórica, medindo antes a perda de qualidade. Desde 17/11/2026 a troca é configuração: `LASTRO_LLM_MODELO` (respostas e verificações) e `LASTRO_LLM_MODELO_FATOS` (extração de fatos), entre Opus 5.5, Sonnet 5.5 e Haiku 5.5, com o preço de cada um no cálculo de custo. Cada fato guarda o modelo que o propôs (`modelo:<id>`), o que permite comparar a taxa de aprovação dos curadores por modelo. Falta a medição.
 3. **Curadoria**: quem aprova os fatos (equipe interna, contador parceiro, especialista contratado) e qual o prazo de aprovação.
 4. **Modelo de negócio**: API B2B paga, portal público gratuito com API paga, ou ferramenta interna.
 5. **Hospedagem**: nuvem e região (dados de consulta de clientes ficam no Brasil?).
@@ -110,3 +187,4 @@ O conjunto de referência roda a cada mudança de prompt, modelo ou pipeline; um
    | `lastronfse.com.br` | Redireciona para o principal (quem digita sem hífen) | Disponível |
    | `lastrotributario.com.br` | Reserva para quando o escopo passar da NFS-e (ISS, NF-e) | Disponível |
 7. **Acesso ao DOU** (achado da Fase 0). O portal `www.in.gov.br` derruba a conexão de User-Agents de robô e só responde a navegadores. O projeto não disfarça o robô de navegador. Opções: (a) cadastrar uma conta no INLABS, a via oficial de acesso automatizado (em 16/11/2026 o INLABS estava em manutenção programada; reavaliar com `pnpm sondar --fonte dou` quando voltar); (b) pedir à Imprensa Nacional a liberação do User-Agent do robô; (c) não coletar o DOU direto e usar como N1 os PDFs que os próprios órgãos publicam (CGIBS, Planalto, SIJUT), mantendo o DOU só para conferência manual.
+8. **Provedor de CAPTCHA do portal público** (Fase 4): Cloudflare Turnstile ou hCaptcha. O código aceita os dois (`LASTRO_PORTAL_CAPTCHA`); falta escolher, criar as chaves e avaliar o tratamento de dados de cada provedor na política de privacidade (LGPD).

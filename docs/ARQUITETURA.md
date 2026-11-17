@@ -166,11 +166,18 @@ O identificador público de um *snapshot* (`documento + sha256`) é estável: qu
 | GET | `/v1/fatos?tema=` | Fatos aprovados (prazos, obrigações) com evidência |
 | GET | `/v1/referencias/{tabela}?codigo=` | Consulta exata em tabelas oficiais (cClassTrib, NBS, indOp…) |
 | GET | `/v1/leiaute/campos/{nome}?versao=` | Definição de campo do leiaute |
-| POST | `/v1/webhooks` | Assinatura de alertas (nova NT, novo prazo, alteração de fato) |
+| POST, GET, DELETE | `/v1/alertas` | Alertas por tema do cliente (termos no texto que mudou, temas de fatos curados, fonte, tipo de evento) |
+| GET | `/v1/uso` | Plano, limites e uso medido do cliente |
 
 Autenticação por chave de API por cliente, limite de requisições e medição de uso por chave. Especificação OpenAPI gerada a partir dos schemas Zod.
 
-Estado na Fase 1: já existem `/v1/mudancas`, `/v1/fontes`, `/v1/documentos`, `/v1/documentos/{id}`, `/v1/snapshots/{id}/original` e `/v1/openapi.json`, somente leitura e sem autenticação. Por isso a API só escuta em 127.0.0.1. As assinaturas de webhook são cadastradas pela CLI (`pnpm lastro webhook adicionar`) até existir autenticação por cliente para `POST /v1/webhooks`.
+Estado na Fase 2: além das rotas da Fase 1, existem `/v1/busca`, `/v1/referencias`, `/v1/referencias/{tabela}`, `/v1/leiaute/campos/{nome}`, `POST /v1/perguntas` e `GET /v1/perguntas/{id}`. Toda rota de dados exige `Authorization: Bearer <chave>`; só `/v1/saude` e `/v1/openapi.json` são públicas. Clientes e chaves são criados pela CLI (`pnpm lastro cliente criar`, `pnpm lastro chave criar`). O painel HTML não tem como mandar chave, então só é registrado quando a API escuta em 127.0.0.1, com rota própria de download (`/painel/snapshots/{id}/original`). Na Fase 3 entraram `/v1/fatos`, `/v1/fatos/temas`, `/v1/fatos/{id}`, `POST /v1/verificacoes`, `GET /v1/verificacoes/{id}`, `POST|DELETE /v1/verificacoes/{id}/compartilhamento` (escopo de chave `verificacoes`) e as rotas públicas do link compartilhado (`/verificacoes/{token}` em HTML e `/v1/publico/verificacoes/{token}` em JSON). Na Fase 4 entraram `GET /v1/uso` (qualquer escopo), `POST|GET|DELETE /v1/alertas` (escopo `alertas`; os alertas são assinaturas de webhook do próprio cliente, e as do operador seguem pela CLI) e `/.well-known/security.txt`. O feed ganhou o evento `fato-aprovado` e o campo `fato_id` nos eventos de curadoria.
+
+Papéis de banco da Fase 3: `lastro_curadoria` (painel: lê índice e propostas, insere fatos, relações e decisões, recall só pela função `registrar_recall`, mantém sessões) e o processador ganhou INSERT em `metadado_ato`, `relacao_normativa` e `fato` (só propostas). A API lê fatos e relações pelas views `fato_publico` e `relacao_publica`, que só mostram o que passou pela dupla aprovação.
+
+Papéis de banco da Fase 2: `lastro_processador` (lê snapshots, insere extração, trechos, tabelas e campos) e `lastro_api` (lê arquivo e conhecimento, autentica chaves só pela função `autenticar_chave`, grava `consulta_log` sob RLS). O disjuntor global de gasto usa a função `gasto_llm_global`, a única leitura que atravessa clientes.
+
+Papéis e tabelas da Fase 4: `plano` e a view `cliente_limites` (limite efetivo = exceção do cliente ou plano); `uso_diario` (medição por cliente, dia UTC e métrica), gravada pelo gatilho `consulta_log_medicao` e pela função `registrar_requisicoes`, e lida pela API sob RLS; `webhook_assinatura` ganhou `cliente_id`, `nome`, `termos` e `temas`, com RLS para `lastro_api` (o notificador lê todas, e a coluna `segredo` não é legível pela API); `canal_slack` (workspace → cliente), lida só pela função `cliente_do_slack`.
 
 ### 4.2 Servidor MCP
 
@@ -189,7 +196,17 @@ Exposto em Streamable HTTP (remoto, com autenticação) e stdio (uso local). Fer
 
 Recursos MCP: `nfse://fontes`, `nfse://documento/{id}`, `nfse://mudancas/recentes`.
 
+Estado na Fase 2: todas as ferramentas acima existem, menos `verificar_alegacao` e `consultar_prazo` (dependem dos fatos curados da Fase 3).
+
+Estado na Fase 3: `verificar_alegacao` (escopo `nfse:verificacoes`) e `consultar_prazo` existem; o MCP remoto publica os escopos `nfse:read`, `nfse:perguntas` e `nfse:verificacoes`. O stdio (`pnpm mcp`) atende o operador local; `perguntar_nfse` só funciona com `LASTRO_MCP_CLIENTE_ID`, para valer cota e registro. O HTTP (`pnpm mcp:http`) não tem sessão: cada requisição traz um token OAuth validado contra o JWKS do emissor configurado, com audiência igual à URL do recurso. Escopos: `nfse:read` e `nfse:perguntas`. O cliente da plataforma vem da claim `lastro_cliente_id`.
+
 Ferramentas que devolvem **evidência bruta** (`buscar_fontes_oficiais`, `consultar_codigo`) permitem que o agente do cliente use os dados sem depender da nossa geração. Ferramentas que devolvem **resposta pronta** dão a garantia completa de citação e checagem.
+
+### 4.3 Portal público e canais (Fase 4)
+
+- **Portal** ([apps/portal](../apps/portal)): processo e origem próprios, HTML gerado no servidor, papel `lastro_api` em nome de um cliente do plano `portal-publico`. Pergunta: a resposta aparece só na página e não fica consultável por id. Verificação: redireciona para o link compartilhado na página canônica da API (`/verificacoes/{token}`), a única cópia pública.
+- **Slack** ([apps/canais](../apps/canais)): `POST /slack/comandos`. Confere a assinatura, responde em até 3 s ("consultando…") e entrega a resposta pela `response_url`. Cada workspace fala em nome de um cliente (`canal_slack`) e consome a cota e o orçamento desse cliente.
+- **Extensão de navegador** ([apps/extensao](../apps/extensao)): só abre o portal com o texto selecionado no fragmento da URL; não chama a API nem lê páginas.
 
 ## 5. Stack
 
@@ -203,7 +220,7 @@ Ferramentas que devolvem **evidência bruta** (`buscar_fontes_oficiais`, `consul
 | Banco | PostgreSQL + pgvector + `unaccent` + `pg_trgm` | Um único banco para relacional, full-text e vetores |
 | Filas | pg-boss | Usa o próprio Postgres; um serviço a menos |
 | Storage | S3-compatível com **Object Lock** (RustFS local; S3 ou outro provedor com Object Lock COMPLIANCE em produção) | Bytes originais dos documentos. O MinIO comunitário deixou de publicar imagens; o RustFS 1.0.5 passou no teste de retenção COMPLIANCE, `If-None-Match` e checksum SHA-256. O coletor recusa iniciar se o bucket não tiver retenção COMPLIANCE |
-| Parsing | pdf.js (`unpdf`), ExcelJS, parser XML, Cheerio | Playwright só se alguma fonte exigir JavaScript |
+| Parsing | pdf.js (`unpdf`) em `worker_thread`; ZIP, XLSX e XML lidos com zlib do Node + `htmlparser2` (modo XML) | Decidido na Fase 2: leitor próprio de ZIP com teto de saída do zlib em vez de ExcelJS, para ler só valores e aplicar os limites de zip bomb e XXE num lugar só, com menos dependências. Playwright só se alguma fonte exigir JavaScript |
 | Embeddings | **Decisão em aberto** — a Anthropic não oferece modelo de embeddings | Opções: Voyage AI (API) ou modelo multilíngue auto-hospedado |
 | Observabilidade | OpenTelemetry + logs estruturados | Custo e latência por rota |
 | Local | Docker Compose | Postgres, MinIO, serviços |

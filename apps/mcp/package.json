@@ -1,0 +1,14 @@
+{
+  "name": "@lastro/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@lastro/core": "workspace:*",
+    "@lastro/db": "workspace:*",
+    "@lastro/llm": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "jose": "^6.2.17",
+    "zod": "^4.6.7"
+  }
+}

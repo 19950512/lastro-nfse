@@ -1,7 +1,9 @@
 import type { Fonte } from '@lastro/core';
 import { ErroCursor, type ConsultasArquivo, type Mudanca, type SnapshotParaDownload } from '@lastro/db';
 import { describe, expect, it } from 'vitest';
-import { construirApp } from './app.ts';
+import { construirApp, type DependenciasApi, type OpcoesApi } from './app.ts';
+import { alertasFalsos, autenticadorFalso, CHAVE_LEITURA, conhecimentoFalso, contasFalsas, fatosFalsos, perguntasFalsas, verificacoesFalsas } from './falsos.ts';
+import type { InjectOptions } from 'fastify';
 import { DetalheDocumento, ListaFontes, PaginaDocumentos, PaginaMudancas } from './esquemas.ts';
 
 const DOC = '11111111-1111-4111-8111-111111111111';
@@ -19,6 +21,7 @@ const mudanca: Mudanca = {
   detectadoEm: '2026-11-16T12:00:00.000Z',
   resumo: 'Conteúdo mudou',
   anomalia: null,
+  fatoId: null,
 };
 
 const snapshots: Record<string, SnapshotParaDownload> = {
@@ -67,13 +70,32 @@ function consultas(sobrepor: Partial<ConsultasArquivo> = {}): ConsultasArquivo {
   };
 }
 
-function app(sobrepor: Partial<ConsultasArquivo> = {}) {
-  return construirApp({
-    consultas: consultas(sobrepor),
-    lerOriginal: (sha) => Promise.resolve(Buffer.from(sha.startsWith('a') ? '%PDF' : '<script>alert(1)</script>')),
-    fontes: FONTES,
-    agora: () => new Date('2026-11-16T14:00:00.000Z'),
-  });
+function app(sobrepor: Partial<ConsultasArquivo> = {}, extras: Partial<DependenciasApi> = {}, opcoes: OpcoesApi = { painel: true }) {
+  const instancia = construirApp(
+    {
+      consultas: consultas(sobrepor),
+      lerOriginal: (sha) => Promise.resolve(Buffer.from(sha.startsWith('a') ? '%PDF' : '<script>alert(1)</script>')),
+      fontes: FONTES,
+      agora: () => new Date('2026-11-16T14:00:00.000Z'),
+      autenticacao: autenticadorFalso,
+      conhecimento: conhecimentoFalso,
+      perguntas: perguntasFalsas,
+      fatos: fatosFalsos,
+      verificacoes: verificacoesFalsas,
+      contas: contasFalsas,
+      alertas: alertasFalsos,
+      ...extras,
+    },
+    opcoes,
+  );
+  return {
+    inject: (op: string | InjectOptions) =>
+      instancia.inject(
+        typeof op === 'string'
+          ? { url: op, headers: { authorization: `Bearer ${CHAVE_LEITURA}` } }
+          : { ...op, headers: { authorization: `Bearer ${CHAVE_LEITURA}`, ...op.headers } },
+      ),
+  };
 }
 
 describe('API /v1', () => {
@@ -81,7 +103,8 @@ describe('API /v1', () => {
     const r = await app().inject('/v1/mudancas?desde=2026-11-01&tipo=nova-versao,documento-indisponivel&limite=10');
     expect(r.statusCode).toBe(200);
     const corpo = PaginaMudancas.parse(r.json());
-    expect(corpo.mudancas[0]?.links).toEqual({ documento: `/v1/documentos/${DOC}`, original: `/v1/snapshots/${SNAP_PDF}/original` });
+    expect(corpo.mudancas[0]?.links).toEqual({ documento: `/v1/documentos/${DOC}`, original: `/v1/snapshots/${SNAP_PDF}/original`, fato: null });
+    expect(corpo.mudancas[0]?.fato_id).toBeNull();
     expect(corpo.proximo).toBe('proximo-cursor');
   });
 
@@ -193,7 +216,7 @@ describe('painel', () => {
 
   it('mostra documento com versões e link de download', async () => {
     const r = await app().inject(`/painel/documentos/${DOC}`);
-    expect(r.body).toContain(`/v1/snapshots/${SNAP_PDF}/original`);
+    expect(r.body).toContain(`/painel/snapshots/${SNAP_PDF}/original`);
     expect(r.headers['content-type']).toContain('text/html');
   });
 

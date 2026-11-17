@@ -11,6 +11,9 @@ export interface SenhasPapeis {
   readonly coletor: string;
   readonly leitor: string;
   readonly notificador: string;
+  readonly processador: string;
+  readonly api: string;
+  readonly curadoria: string;
 }
 
 /**
@@ -38,6 +41,9 @@ export async function prepararBanco(
       ['lastro_coletor', senhas.coletor],
       ['lastro_leitor', senhas.leitor],
       ['lastro_notificador', senhas.notificador],
+      ['lastro_processador', senhas.processador],
+      ['lastro_api', senhas.api],
+      ['lastro_curadoria', senhas.curadoria],
     ] as const) {
       const existe = await cliente.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [papel]);
       if (existe.rowCount === 0) await cliente.query(`CREATE ROLE ${cliente.escapeIdentifier(papel)}`);

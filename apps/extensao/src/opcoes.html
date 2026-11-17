@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Lastro — opções</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.5 system-ui, sans-serif; margin: 16px; max-width: 480px; }
+  label { display: block; font-weight: 600; margin-bottom: 4px; }
+  input { width: 100%; box-sizing: border-box; font: inherit; padding: 6px; }
+  button { font: inherit; margin-top: 8px; padding: 6px 14px; }
+  p { color: GrayText; font-size: .9rem; }
+</style>
+</head>
+<body>
+<form id="formulario">
+  <label for="portal">Endereço do portal Lastro</label>
+  <input id="portal" type="url" required placeholder="https://…" autocomplete="off">
+  <button type="submit">Salvar</button>
+  <p id="situacao" role="status"></p>
+</form>
+<p>Ao escolher “Checar no Lastro” num texto selecionado, a extensão abre a página de verificação do portal com o texto preenchido. Nada é enviado até você clicar em “Verificar” no portal.</p>
+<script type="module" src="opcoes.js"></script>
+</body>
+</html>

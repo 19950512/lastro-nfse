@@ -40,7 +40,56 @@ interface LinhaPendente {
   doc_url: string;
   detectado_em: Date;
   anomalia: string | null;
+  fato_id: string | null;
+  nome: string | null;
 }
+
+// why: alerta por tema é reavaliado a cada despacho (os trechos da versão nova só existem depois de `processar`);
+// a janela limita o custo dessa reavaliação, que cresceria com todo o histórico de eventos.
+export const JANELA_ALERTAS_DIAS = 14;
+
+/* invariant: sem termos nem temas, a assinatura recebe todo evento dos filtros de fonte e tipo (webhook da Fase 1);
+   com termos ou temas, só o que casa: tema = fato do tema ou mudança posterior à aprovação em documento que o
+   sustenta; termo = texto ausente da última versão anterior processada, ou enunciado do fato. Versão anômala não tem
+   trechos até ser liberada, então não dispara alerta por termo antes da revisão humana. */
+export const SQL_ENFILEIRAR = `
+  INSERT INTO webhook_entrega (assinatura_id, evento_id, situacao, proxima_tentativa)
+  SELECT a.id, e.id, 'pendente', $1
+    FROM webhook_assinatura a
+    JOIN evento_mudanca e ON e.detectado_em >= a.criada_em
+                          AND (a.fontes IS NULL OR e.fonte_id = ANY (a.fontes))
+                          AND (a.tipos IS NULL OR e.tipo = ANY (a.tipos))
+   WHERE a.ativa
+     AND (
+       (a.termos IS NULL AND a.temas IS NULL)
+       OR (e.detectado_em >= $1::timestamptz - make_interval(days => $2) AND (
+         (a.temas IS NOT NULL AND e.fato_id IS NOT NULL
+          AND EXISTS (SELECT 1 FROM fato_publico f WHERE f.id = e.fato_id AND f.tema = ANY (a.temas)))
+         OR (a.temas IS NOT NULL AND e.fato_id IS NULL
+          AND EXISTS (SELECT 1 FROM fato_publico f JOIN trecho t ON t.id = f.evidencia_trecho_id
+                       WHERE t.documento_id = e.documento_id AND f.situacao = 'aprovado' AND f.tema = ANY (a.temas)
+                         AND f.aprovado_em <= e.detectado_em))
+         OR (a.termos IS NOT NULL AND e.fato_id IS NOT NULL
+          AND EXISTS (SELECT 1 FROM fato_publico f
+                       WHERE f.id = e.fato_id
+                         AND to_tsvector('lastro_pt'::regconfig, f.tema || ' ' || f.enunciado)
+                             @@ ANY (ARRAY(SELECT websearch_to_tsquery('lastro_pt'::regconfig, x) FROM unnest(a.termos) x))))
+         OR (a.termos IS NOT NULL AND e.fato_id IS NULL AND e.snapshot_novo IS NOT NULL
+          AND EXISTS (SELECT 1 FROM trecho t
+                       WHERE t.snapshot_id = e.snapshot_novo
+                         AND t.busca @@ ANY (ARRAY(SELECT websearch_to_tsquery('lastro_pt'::regconfig, x) FROM unnest(a.termos) x))
+                         AND NOT EXISTS (
+                           SELECT 1 FROM trecho o
+                            WHERE o.texto = t.texto
+                              AND o.snapshot_id = (
+                                SELECT s.id FROM snapshot s
+                                 WHERE s.documento_id = e.documento_id
+                                   AND s.coletado_em < (SELECT n.coletado_em FROM snapshot n WHERE n.id = e.snapshot_novo)
+                                   AND EXISTS (SELECT 1 FROM trecho x WHERE x.snapshot_id = s.id)
+                                 ORDER BY s.coletado_em DESC, s.id DESC LIMIT 1))))
+       ))
+     )
+  ON CONFLICT DO NOTHING`;
 
 export async function despachar(pool: pg.Pool, enviar: Enviador, opcoes: OpcoesDespacho): Promise<ResultadoDespacho> {
   const agora = opcoes.agora ?? (() => new Date());
@@ -51,22 +100,12 @@ export async function despachar(pool: pg.Pool, enviar: Enviador, opcoes: OpcoesD
     if (trava.rows[0]?.ok !== true) return { ...resultado, emAndamento: true };
     try {
       // invariant: só eventos detectados depois do cadastro; um assinante novo não recebe o histórico inteiro.
-      const fila = await cliente.query(
-        `INSERT INTO webhook_entrega (assinatura_id, evento_id, situacao, proxima_tentativa)
-         SELECT a.id, e.id, 'pendente', $1
-           FROM webhook_assinatura a
-           JOIN evento_mudanca e ON e.detectado_em >= a.criada_em
-                                 AND (a.fontes IS NULL OR e.fonte_id = ANY (a.fontes))
-                                 AND (a.tipos IS NULL OR e.tipo = ANY (a.tipos))
-          WHERE a.ativa
-         ON CONFLICT DO NOTHING`,
-        [agora()],
-      );
+      const fila = await cliente.query(SQL_ENFILEIRAR, [agora(), JANELA_ALERTAS_DIAS]);
       resultado.enfileiradas = fila.rowCount ?? 0;
 
       const pendentes = await cliente.query<LinhaPendente>(
         `SELECT w.assinatura_id, w.evento_id, w.tentativas, a.url, a.formato, a.segredo,
-                e.tipo, e.fonte_id, e.documento_id, d.url AS doc_url, e.detectado_em, e.anomalia
+                e.tipo, e.fonte_id, e.documento_id, d.url AS doc_url, e.detectado_em, e.anomalia, e.fato_id, a.nome
            FROM webhook_entrega w
            JOIN webhook_assinatura a ON a.id = w.assinatura_id
            JOIN evento_mudanca e ON e.id = w.evento_id
@@ -89,6 +128,8 @@ export async function despachar(pool: pg.Pool, enviar: Enviador, opcoes: OpcoesD
             url: p.doc_url,
             detectadoEm: p.detectado_em.toISOString(),
             anomalia: p.anomalia,
+            fatoId: p.fato_id,
+            alerta: p.nome === null ? null : { id: p.assinatura_id, nome: p.nome },
           },
           p.formato,
           opcoes.urlPublicaApi,

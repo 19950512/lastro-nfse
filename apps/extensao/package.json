@@ -1,0 +1,7 @@
+{
+  "name": "@lastro/extensao",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Extensão de navegador (Manifest V3): carregar a pasta src/ como extensão sem empacotar."
+}

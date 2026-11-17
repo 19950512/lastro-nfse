@@ -43,12 +43,17 @@ const resolverPadrao: Resolvedor = async (host) => (await lookup(host, { all: tr
  * hazard: o segredo fica no banco em texto (o despacho precisa dele para o HMAC); só os papéis admin e
  * notificador leem a tabela. Em produção, considerar cifrar a coluna com chave do gerenciador de segredos.
  */
-export async function criarAssinatura(
-  pool: pg.Pool,
-  nova: NovaAssinatura,
-  idsFontes: ReadonlySet<string>,
-  resolver: Resolvedor = resolverPadrao,
-): Promise<{ id: string; segredo: string }> {
+export interface DestinoValidado {
+  readonly url: string;
+  readonly fontes: string[] | null;
+  readonly tipos: TipoEvento[] | null;
+}
+
+/**
+ * invariant: mesma validação para assinatura do operador e alerta do cliente: URL estática segura, fontes e tipos
+ * conhecidos e host resolvendo só para endereço público no cadastro (o envio confere de novo a cada entrega).
+ */
+export async function validarDestino(nova: NovaAssinatura, idsFontes: ReadonlySet<string>, resolver: Resolvedor = resolverPadrao): Promise<DestinoValidado> {
   const validacao = validarUrlWebhook(nova.url);
   if (!validacao.valida) throw new ErroAssinatura(validacao.motivo);
   const desconhecidas = (nova.fontes ?? []).filter((f) => !idsFontes.has(f));
@@ -65,17 +70,24 @@ export async function criarAssinatura(
   if (enderecos.length === 0 || !enderecos.every(enderecoPublico)) {
     throw new ErroAssinatura(`${validacao.url.hostname} resolve para endereço não público`);
   }
+  return {
+    url: validacao.url.toString(),
+    fontes: nova.fontes === undefined || nova.fontes.length === 0 ? null : [...new Set(nova.fontes)],
+    tipos: nova.tipos === undefined || nova.tipos.length === 0 ? null : [...new Set(nova.tipos as TipoEvento[])],
+  };
+}
 
+export async function criarAssinatura(
+  pool: pg.Pool,
+  nova: NovaAssinatura,
+  idsFontes: ReadonlySet<string>,
+  resolver: Resolvedor = resolverPadrao,
+): Promise<{ id: string; segredo: string }> {
+  const destino = await validarDestino(nova, idsFontes, resolver);
   const segredo = gerarSegredo();
   const r = await pool.query<{ id: string }>(
     'INSERT INTO webhook_assinatura (url, formato, segredo, fontes, tipos) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-    [
-      validacao.url.toString(),
-      nova.formato,
-      segredo,
-      nova.fontes === undefined || nova.fontes.length === 0 ? null : nova.fontes,
-      nova.tipos === undefined || nova.tipos.length === 0 ? null : (nova.tipos as TipoEvento[]),
-    ],
+    [destino.url, nova.formato, segredo, destino.fontes, destino.tipos],
   );
   const id = r.rows[0]?.id;
   if (id === undefined) throw new ErroAssinatura('INSERT sem retorno');

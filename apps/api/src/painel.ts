@@ -1,9 +1,9 @@
 import type { Mudanca } from '@lastro/db';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { DependenciasApi } from './app.ts';
-import { listarFontes } from './app.ts';
+import { listarFontes, servirOriginal } from './app.ts';
 import { ConsultaDocumentos, ParametroId } from './esquemas.ts';
-import { hrefSeguro, html, type Html } from './html.ts';
+import { hrefSeguro, html, type Html } from '@lastro/core';
 
 // why: a tela não tem script nenhum; a CSP proíbe qualquer script e só permite o CSS servido pela própria aplicação.
 const CSP_PAINEL =
@@ -127,7 +127,7 @@ ${proximo === null ? '' : html`<p><a href="${hrefSeguro(proximo)}">Próxima pág
 <h2>Versões arquivadas</h2>
 <div class="tabela"><table><thead><tr><th>Coletada em</th><th>SHA-256</th><th>Tipo</th><th>Tamanho</th><th>Original</th></tr></thead><tbody>
 ${d.historico.map(
-  (v) => html`<tr><td>${data(v.coletadoEm)}</td><td><code>${v.sha256.slice(0, 16)}…</code></td><td>${v.mime}</td><td>${v.bytes.toLocaleString('pt-BR')} bytes</td><td><a href="${hrefSeguro(`/v1/snapshots/${v.id}/original`)}">baixar</a></td></tr>`,
+  (v) => html`<tr><td>${data(v.coletadoEm)}</td><td><code>${v.sha256.slice(0, 16)}…</code></td><td>${v.mime}</td><td>${v.bytes.toLocaleString('pt-BR')} bytes</td><td><a href="${hrefSeguro(`/painel/snapshots/${v.id}/original`)}">baixar</a></td></tr>`,
 )}
 </tbody></table></div>
 <h2>Eventos</h2>
@@ -137,6 +137,9 @@ ${d.eventos.map(linhaMudanca)}
       ),
     );
   });
+
+  // why: o painel é HTML sem script e não tem como mandar chave de API; só existe quando a API escuta em 127.0.0.1.
+  app.get('/painel/snapshots/:id/original', async (req, resposta) => servirOriginal(deps, ParametroId.parse(req.params).id, resposta));
 
   app.get('/', (_req, resposta) => resposta.redirect('/painel'));
 }

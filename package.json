@@ -21,7 +21,13 @@
     "coletar": "node --env-file-if-exists=.env apps/worker/src/cli.ts coletar",
     "mudancas": "node --env-file-if-exists=.env apps/worker/src/cli.ts mudancas",
     "notificar": "node --env-file-if-exists=.env apps/worker/src/cli.ts notificar",
-    "api": "node --env-file-if-exists=.env apps/api/src/servidor.ts"
+    "processar": "node --env-file-if-exists=.env apps/worker/src/cli.ts processar",
+    "api": "node --env-file-if-exists=.env apps/api/src/servidor.ts",
+    "admin": "node --env-file-if-exists=.env apps/admin/src/servidor.ts",
+    "portal": "node --env-file-if-exists=.env apps/portal/src/servidor.ts",
+    "canais": "node --env-file-if-exists=.env apps/canais/src/servidor.ts",
+    "mcp": "node --env-file-if-exists=.env apps/mcp/src/stdio.ts",
+    "mcp:http": "node --env-file-if-exists=.env apps/mcp/src/http.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

@@ -4,3 +4,4 @@ export * from './despacho.ts';
 export * from './envio.ts';
 export * from './payload.ts';
 export * from './url.ts';
+export * from './alertas.ts';

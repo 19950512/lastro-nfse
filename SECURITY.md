@@ -20,11 +20,13 @@ Inclua, se possível:
 
 ## Escopo
 
-O projeto tem hoje o coletor de fontes oficiais, a API somente leitura com a tela `/painel` e o envio de webhooks, sem serviço em produção. Interessam em especial:
+O projeto tem hoje o coletor de fontes oficiais, a API (com perguntas, verificações, alertas e a tela `/painel`), o painel de curadoria, o servidor MCP, o portal público, o bot de Slack, a extensão de navegador e o envio de webhooks, sem serviço em produção. Os serviços publicam `/.well-known/security.txt` quando configurados. Interessam em especial:
 
 - **Coletor e webhooks:** alcançar origem fora da lista oficial ou rede interna (SSRF).
 - **Arquivo:** gravar conteúdo de origem não oficial ou alterar o histórico.
 - **Webhooks:** forjar a assinatura HMAC.
-- **API e tela:** XSS na tela ou nos downloads de originais. Relatos sobre o desenho de segurança descrito em [docs/SEGURANCA.md](docs/SEGURANCA.md) também são bem-vindos.
+- **API e tela:** XSS na tela ou nos downloads de originais.
+- **Isolamento entre clientes:** ler ou alterar consultas, verificações, alertas ou medição de outro cliente.
+- **Portal e canais:** contornar CAPTCHA, limites ou cotas; forjar comando do Slack; fazer o servidor chamar um endereço que não seja do Slack ou do provedor de CAPTCHA. Relatos sobre o desenho de segurança descrito em [docs/SEGURANCA.md](docs/SEGURANCA.md) também são bem-vindos.
 
 Nunca inclua em issues, pull requests ou commits: chaves de API, senhas, tokens, dados pessoais ou dados fiscais de clientes.

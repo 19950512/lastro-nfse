@@ -10,6 +10,8 @@ try {
 export default defineConfig({
   test: {
     include: ['packages/*/src/**/*.integracao.test.ts'],
+    // why: todos os arquivos usam o mesmo banco de teste; em paralelo, dois deles processam os mesmos snapshots pendentes.
+    fileParallelism: false,
     testTimeout: 60_000,
     hookTimeout: 120_000,
   },

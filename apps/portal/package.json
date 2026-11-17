@@ -1,0 +1,13 @@
+{
+  "name": "@lastro/portal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@lastro/core": "workspace:*",
+    "@lastro/db": "workspace:*",
+    "@lastro/llm": "workspace:*",
+    "fastify": "^5.12.0",
+    "zod": "^4.6.7"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Lastro — checar este post",
+  "description": "Selecione um texto sobre NFS-e ou reforma tributária e verifique as alegações só com fontes oficiais.",
+  "version": "0.1.0",
+  "minimum_chrome_version": "120",
+  "permissions": ["contextMenus", "storage"],
+  "background": { "service_worker": "fundo.js", "type": "module" },
+  "options_ui": { "page": "opcoes.html", "open_in_tab": false },
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'" }
+}

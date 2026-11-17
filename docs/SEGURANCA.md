@@ -166,6 +166,7 @@ Na Fase 0, este modelo vira uma análise STRIDE formal por componente, revisada 
 - Assinatura HMAC-SHA256 do corpo com *timestamp*, para o cliente rejeitar falsificações e reenvios. Segredo por assinatura, rotacionável.
 - Conteúdo mínimo (ID do evento e link); o cliente busca o detalhe autenticado na API.
 - Novas tentativas com espera crescente; desativação automática após falhas repetidas.
+- Alertas por tema criados pelo próprio cliente (Fase 4): mesma validação de destino, isolamento por RLS (cada cliente só vê e desativa os seus), segredo HMAC mostrado só na criação e fora do SELECT do papel da API, e número máximo de alertas ativos pelo plano.
 
 ## 10. MCP
 
@@ -185,6 +186,8 @@ Baseado nas boas práticas de segurança e na especificação de autorização d
 - `max_tokens` definido por rota; orçamento de custo de LLM por cliente e um disjuntor global de gasto.
 - Cache de respostas idênticas, invalidado quando a base muda.
 - CAPTCHA e limites mais baixos no portal público anônimo.
+
+Estado na Fase 4: cotas por plano (perguntas e verificações separadas) e orçamento por cliente, lidos da medição diária `uso_diario`, que não é apagada pelo expurgo da LGPD (só tem contagens e custo, sem conteúdo). Portal: CAPTCHA conferido no servidor (falha fechada; resposta emitida para outro host é recusada), limite por IP por minuto e, para o que chama o modelo, por hora; o limite por hora só conta pedidos que passaram do CAPTCHA. `X-Forwarded-For` só é aceito de proxy configurado. Slack: assinatura conferida antes de ler o corpo, reenvios ignorados, limites por usuário e por workspace. O cache de respostas idênticas continua pendente.
 
 ## 12. Cadeia de suprimentos e build
 

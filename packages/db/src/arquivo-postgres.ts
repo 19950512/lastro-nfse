@@ -220,7 +220,7 @@ export class ArquivoPostgres implements ArquivoVersionado {
 
   async ultimoEvento(url: string): Promise<EventoMudanca | undefined> {
     const r = await this.pool.query<LinhaEvento>(
-      `${SELECAO_EVENTO} WHERE d.url = $1 ORDER BY e.detectado_em DESC, e.id DESC LIMIT 1`,
+      `${SELECAO_EVENTO} WHERE d.url = $1 AND e.tipo NOT IN ('fato-aprovado', 'fato-corrigido') ORDER BY e.detectado_em DESC, e.id DESC LIMIT 1`,
       [url],
     );
     const linha = r.rows[0];

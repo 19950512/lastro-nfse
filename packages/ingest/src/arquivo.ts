@@ -31,13 +31,18 @@ export interface NovoSnapshot {
   readonly impressao: string;
 }
 
-export const TIPOS_EVENTO = [
+export const TIPOS_EVENTO_COLETA = [
   'documento-novo',
   'nova-versao',
   'link-removido',
   'documento-indisponivel',
   'documento-restabelecido',
 ] as const;
+
+// invariant: `fato-aprovado` e `fato-corrigido` (curadoria e recall) entram no feed e nos webhooks, mas não descrevem
+// o estado do documento na fonte; toda leitura de "último evento" para estado de coleta usa só TIPOS_EVENTO_COLETA.
+export const TIPOS_EVENTO_FATO = ['fato-aprovado', 'fato-corrigido'] as const;
+export const TIPOS_EVENTO = [...TIPOS_EVENTO_COLETA, ...TIPOS_EVENTO_FATO] as const;
 
 export type TipoEvento = (typeof TIPOS_EVENTO)[number];
 

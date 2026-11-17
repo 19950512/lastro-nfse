@@ -41,6 +41,9 @@ beforeAll(async () => {
     coletor: configBanco('coletor', ambiente).password as string,
     leitor: configBanco('leitor', ambiente).password as string,
     notificador: configBanco('notificador', ambiente).password as string,
+    processador: configBanco('processador', ambiente).password as string,
+    api: configBanco('api', ambiente).password as string,
+    curadoria: configBanco('curadoria', ambiente).password as string,
   });
   const cfgS3 = configS3(ambiente);
   storage = StorageWorm.criar(cfgS3);
