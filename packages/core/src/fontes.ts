@@ -8,6 +8,14 @@ export type Nivel = 'N1' | 'N2' | 'N3';
 
 export type Formato = 'html' | 'pdf' | 'xlsx' | 'zip' | 'xsd' | 'xml' | 'doc';
 
+/** Município cuja legislação a fonte publica (Fase 5, ISS). */
+export interface MunicipioFonte {
+  /** Código IBGE de 7 dígitos. */
+  readonly codigoIbge: string;
+  readonly nome: string;
+  readonly uf: string;
+}
+
 export interface Fonte {
   readonly id: string;
   readonly nome: string;
@@ -24,11 +32,14 @@ export interface Fonte {
   readonly slaHoras: number;
   /** Coluna "Validado" de FONTES-OFICIAIS.md antes da Fase 0. */
   readonly validadaNoCatalogo: boolean;
+  /** Presente só em fonte de legislação municipal (ISS). */
+  readonly municipio?: MunicipioFonte;
 }
 
 const NFSE = 'https://www.gov.br/nfse/pt-br';
 const DOC_TEC = `${NFSE}/biblioteca/documentacao-tecnica`;
 const PLANALTO = 'https://www.planalto.gov.br/ccivil_03';
+const SP_LEGISLACAO = 'https://legislacao.prefeitura.sp.gov.br';
 
 export const FONTES: readonly Fonte[] = [
   {
@@ -211,6 +222,20 @@ export const FONTES: readonly Fonte[] = [
     validadaNoCatalogo: true,
   },
   {
+    // why: cadastro dos municípios no ambiente nacional, publicado pelo CGNFS-e para os 5.571 municípios.
+    // Não substitui a lei municipal (Fase 5): é o que o município declarou ao sistema nacional.
+    id: 'nfse-aliquotas-iss',
+    nome: 'Portal NFS-e – Alíquotas de ISSQN',
+    orgao: 'SE/CGNFS-e',
+    nivel: 'N2',
+    sementes: [`${NFSE}/biblioteca/aliquotas/aliquotas-de-issqn`],
+    formatos: ['html', 'zip'],
+    colherDocumentos: true,
+    frequenciaHoras: 24,
+    slaHoras: 48,
+    validadaNoCatalogo: true,
+  },
+  {
     id: 'receita-reforma',
     nome: 'Receita Federal – Reforma Tributária do Consumo',
     orgao: 'Receita Federal do Brasil',
@@ -294,8 +319,34 @@ export const FONTES: readonly Fonte[] = [
     slaHoras: 48,
     validadaNoCatalogo: false,
   },
+  /* invariant: legislação municipal do ISS (Fase 5) entra um município por vez, e só se o site oficial passou na
+     sondagem: HTTPS válido, robots.txt permite e o texto está no HTML sem depender de script
+     (docs/FONTES-OFICIAIS.md, "Legislação municipal"). */
+  {
+    id: 'municipio-3550308-legislacao',
+    nome: 'Prefeitura de São Paulo – Catálogo de Legislação Municipal (ISS)',
+    orgao: 'Prefeitura do Município de São Paulo',
+    nivel: 'N1',
+    // hazard: o catálogo responde 200 com a página inicial genérica para endereço inexistente (soft 404);
+    // cada semente foi conferida pelo título do ato em 17/11/2026.
+    sementes: [
+      `${SP_LEGISLACAO}/lei-13701-de-24-de-dezembro-de-2003`,
+      `${SP_LEGISLACAO}/decreto-53151-de-17-de-maio-de-2012`,
+      `${SP_LEGISLACAO}/lei-14097-de-08-de-dezembro-de-2005`,
+    ],
+    formatos: ['html'],
+    colherDocumentos: false,
+    frequenciaHoras: 24,
+    slaHoras: 48,
+    validadaNoCatalogo: true,
+    municipio: { codigoIbge: '3550308', nome: 'São Paulo', uf: 'SP' },
+  },
 ];
 
 export function buscarFonte(id: string): Fonte | undefined {
   return FONTES.find((f) => f.id === id);
+}
+
+export function fontesMunicipais(fontes: readonly Fonte[] = FONTES): Fonte[] {
+  return fontes.filter((f) => f.municipio !== undefined);
 }

@@ -1,4 +1,4 @@
-import { LimitadorTaxa, montarSecurityTxt, type ConfigSecurityTxt, type Fonte } from '@lastro/core';
+import { fontesMunicipais, LimitadorTaxa, montarSecurityTxt, type ConfigSecurityTxt, type Fonte } from '@lastro/core';
 import {
   ErroCursor,
   type ConsultasArquivo,
@@ -9,15 +9,22 @@ import {
   type ResumoDocumento,
   type TabelaDisponivel,
   type ConsultasFatos,
+  type ConsultasIss,
   type FatoPublico,
+  type FiltroMunicipios,
   type RepositorioClientes,
+  type TabelaAliquotasVigente,
 } from '@lastro/db';
 import { ErroAssinatura, ErroLimiteAlertas, type Alerta as AlertaRegistrado, type RepositorioAlertas } from '@lastro/webhooks';
-import { ErroCota, ErroModelo, type ServicoPerguntas, type ServicoVerificacoes } from '@lastro/llm';
+import { dataIsoBrasil, ErroCota, ErroModelo, vigenteEm, type ServicoPerguntas, type ServicoVerificacoes } from '@lastro/llm';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { ZodError, type z } from 'zod';
 import {
+  AliquotasIss,
   CamposLeiaute,
+  ConsultaAliquotasIss,
+  ConsultaMunicipiosIss,
+  ListaMunicipiosIss,
   ConsultaBusca,
   ConsultaCampo,
   ConsultaDocumentos,
@@ -92,6 +99,7 @@ export interface DependenciasApi {
   /** Plano, limites e medição de uso do cliente (Fase 4). */
   readonly contas: Pick<RepositorioClientes, 'limites' | 'usoMensal' | 'usoPorDia' | 'registrarRequisicoes'>;
   readonly alertas: RepositorioAlertas;
+  readonly iss?: ConsultasIss;
   /** Origem pública da API, para montar o link compartilhável. */
   readonly urlPublica?: string;
   readonly agora?: () => Date;
@@ -424,6 +432,73 @@ export function construirApp(deps: DependenciasApi, opcoes: OpcoesApi = {}): Fas
         return t === undefined ? [] : [{ tabela: t, linha: l.ordem + 1, dados: { ...l.dados } }];
       }),
     };
+  });
+
+  const tabelaIssParaSaida = (t: TabelaAliquotasVigente) => {
+    const o = origem(t);
+    return o === undefined ? undefined : { ...o, data_referencia: t.dataReferencia, linhas: t.linhas, confirmado_em: t.confirmadoEm };
+  };
+  const municipais = fontesMunicipais(deps.fontes);
+  const legislacaoDe = (codigoIbge: string) => {
+    const f = municipais.find((m) => m.municipio?.codigoIbge === codigoIbge);
+    return f === undefined ? null : { fonte_id: f.id, orgao: f.orgao, nivel: f.nivel, sementes: [...f.sementes] };
+  };
+  const semAcento = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
+  app.get('/v1/iss/municipios', async (req): Promise<z.infer<typeof ListaMunicipiosIss>> => {
+    const q = ConsultaMunicipiosIss.parse(req.query);
+    const iss = deps.iss;
+    const tabela = iss === undefined ? undefined : await iss.tabelaVigente();
+    const naTabela = async (filtro: FiltroMunicipios) => (tabela === undefined || iss === undefined ? [] : iss.buscarMunicipios(tabela.extracaoId, filtro));
+    const saida = new Map<string, z.infer<typeof ListaMunicipiosIss>['municipios'][number]>();
+    for (const m of await naTabela({ nome: q.nome, uf: q.uf, codigoIbge: q.codigo_ibge, limite: q.limite })) {
+      saida.set(m.codigoIbge, { codigo_ibge: m.codigoIbge, uf: m.uf, nome: m.nome, aliquotas_na_tabela: true, legislacao: legislacaoDe(m.codigoIbge) });
+    }
+    for (const f of municipais) {
+      const m = f.municipio;
+      if (m === undefined || saida.has(m.codigoIbge)) continue;
+      if (q.nome !== undefined && !semAcento(m.nome).startsWith(semAcento(q.nome))) continue;
+      if ((q.uf !== undefined && m.uf !== q.uf) || (q.codigo_ibge !== undefined && m.codigoIbge !== q.codigo_ibge)) continue;
+      const presente = (await naTabela({ codigoIbge: m.codigoIbge, limite: 1 })).length > 0;
+      saida.set(m.codigoIbge, { codigo_ibge: m.codigoIbge, uf: m.uf, nome: m.nome, aliquotas_na_tabela: presente, legislacao: legislacaoDe(m.codigoIbge) });
+    }
+    return { tabela_aliquotas: tabela === undefined ? null : (tabelaIssParaSaida(tabela) ?? null), municipios: [...saida.values()].slice(0, q.limite) };
+  });
+
+  app.get('/v1/iss/aliquotas', async (req, resposta) => {
+    const q = ConsultaAliquotasIss.parse(req.query);
+    const iss = deps.iss;
+    const tabela = iss === undefined ? undefined : await iss.tabelaVigente();
+    const saidaTabela = tabela === undefined ? undefined : tabelaIssParaSaida(tabela);
+    if (iss === undefined || tabela === undefined || saidaTabela === undefined) return resposta.status(404).send({ erro: 'tabela-indisponivel' });
+    const [municipio] = await iss.buscarMunicipios(tabela.extracaoId, { codigoIbge: q.municipio, limite: 1 });
+    if (municipio === undefined) return resposta.status(404).send({ erro: 'municipio-sem-aliquotas', legislacao: legislacaoDe(q.municipio) });
+
+    const data = q.data ?? dataIsoBrasil(agora());
+    const linhas = await iss.aliquotas(tabela.extracaoId, municipio.codigoIbge, q.servico === undefined ? null : [q.servico], q.limite);
+    const vigentes = new Map<string, Set<string | null>>();
+    for (const l of linhas.filter((x) => vigenteEm(x, data))) vigentes.set(l.codigoServico, (vigentes.get(l.codigoServico) ?? new Set()).add(l.aliquota));
+    const saida: z.infer<typeof AliquotasIss> = {
+      tabela: saidaTabela,
+      municipio: { codigo_ibge: municipio.codigoIbge, uf: municipio.uf, nome: municipio.nome },
+      data,
+      servico_prefixo: q.servico ?? null,
+      aliquotas: linhas.map((l) => ({
+        codigo_servico: l.codigoServico,
+        incidencia: l.incidencia,
+        aliquota: l.aliquota,
+        vigente_na_data: vigenteEm(l, data),
+        cancelado: l.fim !== null && l.fim < l.inicio,
+        inicio: l.inicio,
+        fim: l.fim,
+        arquivo: l.arquivo,
+        linha: l.linha,
+        linha_publicada: l.textoPublicado,
+      })),
+      divergencias: [...vigentes.entries()].filter(([, a]) => a.size > 1).map(([codigo]) => codigo),
+      aviso: 'Tabela de alíquotas de ISSQN cadastradas pelos municípios no ambiente nacional da NFS-e; havendo divergência, vale a lei municipal.',
+    };
+    return saida;
   });
 
   app.get('/v1/leiaute/campos/:nome', async (req): Promise<z.infer<typeof CamposLeiaute>> => {

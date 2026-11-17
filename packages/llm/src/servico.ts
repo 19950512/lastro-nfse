@@ -1,5 +1,16 @@
 import type { Fonte } from '@lastro/core';
-import type { CampoEncontrado, Canal, ConsultaRegistrada,ConsultasConhecimento, ConsultasFatos, LinhaEncontrada, RepositorioClientes, TrechoEncontrado } from '@lastro/db';
+import type {
+  CampoEncontrado,
+  Canal,
+  ConsultaRegistrada,
+  ConsultasConhecimento,
+  ConsultasFatos,
+  ConsultasIss,
+  LinhaEncontrada,
+  MunicipioTabela,
+  RepositorioClientes,
+  TrechoEncontrado,
+} from '@lastro/db';
 import { dataIsoBrasil } from './checagem.ts';
 import type { ClienteModelo } from './modelo.ts';
 import { responderPergunta, type DependenciasPipeline, type SituacaoNormativa } from './pipeline.ts';
@@ -33,6 +44,7 @@ export interface DependenciasServico {
   readonly conhecimento: ConsultasConhecimento;
   /** Fatos e grafo aprovados pela curadoria (Fase 3); sem eles, a pergunta usa só a busca. */
   readonly fatos?: ConsultasFatos;
+  readonly iss?: LeituraIss;
   readonly modelo: ClienteModelo;
   readonly fontes: readonly Fonte[];
   /** Disjuntor global: soma do custo de LLM de todos os clientes desde 00:00 UTC. */
@@ -128,6 +140,28 @@ function grafoEFatos(fatos: ConsultasFatos, hoje: string): Pick<DependenciasPipe
   };
 }
 
+type LeituraIss = Pick<ConsultasIss, 'tabelaVigente' | 'municipios' | 'aliquotas'>;
+
+// why: a lista de municípios (cerca de 5.300) só muda com pacote novo, que é outra extração; o cache é por extração.
+function comCacheDeMunicipios(iss: LeituraIss): LeituraIss {
+  let cache: { extracaoId: string; municipios: Promise<MunicipioTabela[]> } | undefined;
+  return {
+    tabelaVigente: () => iss.tabelaVigente(),
+    aliquotas: (extracaoId, codigoIbge, prefixos, limite) => iss.aliquotas(extracaoId, codigoIbge, prefixos, limite),
+    municipios: (extracaoId) => {
+      if (cache?.extracaoId !== extracaoId) {
+        const municipios = iss.municipios(extracaoId);
+        // hazard: uma leitura que falhou não pode ficar presa no cache e derrubar todas as perguntas seguintes.
+        municipios.catch(() => {
+          if (cache?.municipios === municipios) cache = undefined;
+        });
+        cache = { extracaoId, municipios };
+      }
+      return cache.municipios;
+    },
+  };
+}
+
 function inicioDoDiaUtc(agora: Date): Date {
   return new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), agora.getUTCDate()));
 }
@@ -160,6 +194,7 @@ export async function conferirCotas(
  */
 export function criarServicoPerguntas(deps: DependenciasServico): ServicoPerguntas {
   const agora = deps.agora ?? (() => new Date());
+  const iss = deps.iss === undefined ? undefined : comCacheDeMunicipios(deps.iss);
   return {
     async responder(solicitante, pergunta) {
       const inicio = performance.now();
@@ -170,7 +205,8 @@ export function criarServicoPerguntas(deps: DependenciasServico): ServicoPergunt
         modelo: deps.modelo,
         fontes: deps.fontes,
         agora: () => momento,
-        buscarTrechos: async (consulta, limite) => (await deps.conhecimento.buscarTrechos({ consulta, limite })).map(evidenciaDeTrecho),
+        buscarTrechos: async (consulta, limite, fontes) => (await deps.conhecimento.buscarTrechos({ consulta, limite, fontes })).map(evidenciaDeTrecho),
+        ...(iss === undefined ? {} : { iss }),
         buscarCodigos: async (codigos) =>
           (await Promise.all(codigos.map((c) => deps.conhecimento.consultarReferencia(null, c, 3)))).flat().slice(0, 6).map(evidenciaDeLinha),
         buscarCampos: async (nomes) =>

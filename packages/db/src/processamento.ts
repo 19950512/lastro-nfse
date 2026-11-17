@@ -1,5 +1,5 @@
 import { verificarOrigem } from '@lastro/core';
-import { extrairDocumento, VERSAO_EXTRATOR, type Extracao } from '@lastro/parsers';
+import { extrairDocumento, VERSAO_EXTRATOR, type Extracao, type TabelaAliquotasIss } from '@lastro/parsers';
 import type pg from 'pg';
 
 export interface SnapshotPendente {
@@ -20,6 +20,8 @@ export interface ResultadoProcessamento {
 }
 
 const LOTE_INSERCAO = 500;
+// why: a tabela de alíquotas tem ~1,9 milhão de linhas; lotes de 500 seriam ~3.800 comandos na mesma transação.
+const LOTE_ALIQUOTAS = 10_000;
 
 /** Snapshots indexáveis (ver view `snapshot_indexavel`) ainda sem extração na versão atual do extrator. */
 export async function listarPendentes(pool: pg.Pool, limite: number, versao = VERSAO_EXTRATOR): Promise<SnapshotPendente[]> {
@@ -50,8 +52,46 @@ function contarItens(extracao: Extracao): number {
       return extracao.tabelas.reduce((n, t) => n + t.linhas.length, 0);
     case 'leiaute':
       return extracao.campos.length;
+    case 'aliquotas':
+      return extracao.aliquotas.total;
     case 'ignorado':
       return 0;
+  }
+}
+
+async function gravarAliquotas(
+  cliente: pg.PoolClient,
+  base: readonly [string, string, string, string],
+  tabela: TabelaAliquotasIss,
+): Promise<void> {
+  const [extracaoId] = base;
+  await cliente.query(
+    `INSERT INTO tabela_aliquota_iss (extracao_id, snapshot_id, documento_id, fonte_id, data_referencia, linhas, recusadas, arquivos)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [...base, tabela.dataReferencia, tabela.total, tabela.recusadas, tabela.arquivos.map((a) => a.nome)],
+  );
+  for (const lote of lotes(tabela.municipios)) {
+    await cliente.query(
+      'INSERT INTO municipio_iss (extracao_id, codigo_ibge, uf, nome) SELECT $1, * FROM unnest($2::text[], $3::text[], $4::text[])',
+      [extracaoId, lote.map((m) => m.codigoIbge), lote.map((m) => m.uf), lote.map((m) => m.nome)],
+    );
+  }
+  for (const lote of tabela.lotes(LOTE_ALIQUOTAS)) {
+    await cliente.query(
+      `INSERT INTO aliquota_iss (extracao_id, arquivo, linha, codigo_ibge, codigo_servico, incidencia, aliquota, inicio, fim)
+       SELECT $1, * FROM unnest($2::text[], $3::int[], $4::text[], $5::text[], $6::text[], $7::text[], $8::date[], $9::date[])`,
+      [
+        extracaoId,
+        lote.map((l) => l.arquivo),
+        lote.map((l) => l.linha),
+        lote.map((l) => l.codigoIbge),
+        lote.map((l) => l.codigoServico),
+        lote.map((l) => l.incidencia),
+        lote.map((l) => l.aliquota),
+        lote.map((l) => l.inicio),
+        lote.map((l) => l.fim),
+      ],
+    );
   }
 }
 
@@ -79,7 +119,7 @@ export async function gravarExtracao(
     if (extracaoId === undefined) throw new Error('INSERT de extração sem retorno');
     const base = [extracaoId, pendente.snapshotId, pendente.documentoId, pendente.fonteId] as const;
 
-    if (resultado.tipo === 'texto' || resultado.tipo === 'tabelas' || resultado.tipo === 'leiaute') {
+    if (resultado.tipo === 'texto' || resultado.tipo === 'tabelas' || resultado.tipo === 'leiaute' || resultado.tipo === 'aliquotas') {
       for (const lote of lotes(resultado.trechos)) {
         await cliente.query(
           `INSERT INTO trecho (extracao_id, snapshot_id, documento_id, fonte_id, ordem, texto, pagina_ini, pagina_fim, secao)
@@ -135,6 +175,7 @@ export async function gravarExtracao(
         );
       }
     }
+    if (resultado.tipo === 'aliquotas') await gravarAliquotas(cliente, base, resultado.aliquotas);
     await cliente.query('COMMIT');
   } catch (erro) {
     await cliente.query('ROLLBACK').catch(() => undefined);

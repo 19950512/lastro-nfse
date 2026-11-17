@@ -5,6 +5,7 @@ export * from './config.ts';
 export * from './conhecimento.ts';
 export * from './curadoria.ts';
 export * from './fatos.ts';
+export * from './iss.ts';
 export * from './normativo.ts';
 export * from './verificacoes.ts';
 export * from './consultas.ts';

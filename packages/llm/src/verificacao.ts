@@ -19,10 +19,15 @@ import {
   type Veredito,
   type VereditoModelo,
 } from './regras-veredito.ts';
-import { classificarPergunta } from './roteador.ts';
+import { classificarPergunta, type Rota } from './roteador.ts';
 import type { Evidencia } from './tipos.ts';
 
 export const MAX_TEXTO_VERIFICACAO = 5000;
+
+/* why: a verificação de alegação de ISS fica para depois da Fase 5. Um FALSO sobre alíquota ou regra municipal
+   exigiria fato curado com a tabela oficial ou a lei do município, e ainda não há regra de evidência para isso
+   em regras-veredito.ts; a recusa é decidida em código, não pelo modelo. */
+const ROTAS_FORA_DA_VERIFICACAO: ReadonlySet<Rota> = new Set<Rota>(['fora-do-escopo', 'iss', 'iss-aliquota']);
 // why: limites por verificação (SEGURANCA.md §11): alegações extraídas, evidências enviadas e tokens por chamada.
 const MAX_ALEGACOES = 8;
 const TRECHOS_POR_ALEGACAO = 5;
@@ -347,8 +352,7 @@ export async function verificarAlegacoes(texto: string, deps: DependenciasVerifi
         verificavel: a.verificavel,
         consulta: normalizar(a.consulta).slice(0, 300),
         dataMencionada: a.data_mencionada,
-        // why: ISS municipal fica fora das fases 0–4; a recusa é decidida em código, não pelo modelo.
-        foraDoEscopo: !a.verificavel || classificarPergunta(t) === 'fora-do-escopo',
+        foraDoEscopo: !a.verificavel || ROTAS_FORA_DA_VERIFICACAO.has(classificarPergunta(t)),
       },
     ];
   });

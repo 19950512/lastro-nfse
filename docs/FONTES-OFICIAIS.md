@@ -48,7 +48,8 @@ Regra de conflito: nível mais alto prevalece; no mesmo nível, o ato mais recen
 | Portal NFS-e – Atualizações e implantações | `gov.br/nfse/.../atualizacoes-e-implantacoes` | Cronograma de releases | HTML / PDF | sim |
 | Portal NFS-e – Leiautes antigos | `gov.br/nfse/.../leiaute-e-esquemas-antigos` | Histórico (jul/2022 a 28/09/2025) | PDF, XSD | sim |
 | Portal NFS-e – NFS-e Via | `gov.br/nfse/pt-br/nfs-e-via` | Modelo para pedágio | PDF | sim |
-| Portal NFS-e – Eventos, Lista de serviços/NBS | `gov.br/nfse/pt-br/biblioteca` | Tabelas de referência (a página de Alíquotas de ISSQN fica para a fase de ISS) | HTML / XLSX | sim |
+| Portal NFS-e – Eventos, Lista de serviços/NBS | `gov.br/nfse/pt-br/biblioteca` | Tabelas de referência | HTML / XLSX | sim |
+| Portal NFS-e – Alíquotas de ISSQN (Fase 5) | `gov.br/nfse/pt-br/biblioteca/aliquotas` | Alíquotas que cada município cadastrou no ambiente nacional, por código de serviço e vigência. "Abrange todos os 5.571 municípios", segundo a página, mas o pacote de 03/09/2026 tem registros de 5.341 | ZIP com um CSV por UF + TXT consolidado | sim (Fase 5): 1.919.368 linhas lidas sem recusa |
 | Receita Federal – Programa da Reforma Tributária do Consumo | `gov.br/receitafederal` | Manuais (ex.: Manual da Plataforma CBS), material de apoio, marcos legais | PDF / HTML | sim (Fase 0): tem feed RSS/Atom |
 | Portal Nacional da NF-e | `nfe.fazenda.gov.br` | NTs RTC da NF-e/NFC-e. Não é NFS-e, mas o cronograma da reforma é conjunto e a confusão entre os documentos é frequente | PDF | **bloqueado** (Fase 0): a página exige cookie (`AspxAutoDetectCookieSupport`) e entra em laço de redirecionamento sem ele |
 
@@ -63,9 +64,28 @@ Regra de conflito: nível mais alto prevalece; no mesmo nível, o ato mais recen
 | Notícias do CGIBS | `cgibs.gov.br` | Comunicados sobre IBS e documentos fiscais | sim (Fase 0) |
 | Ministério da Fazenda – Reforma Tributária | `gov.br/fazenda` | Regulamentação, projetos de lei complementar | sim (Fase 0) |
 
+## Legislação municipal (Fase 5)
+
+Um adaptador por município (`municipio-<código IBGE>-legislacao`, nível N1), na lista fechada com host e órgão próprios. Um município só entra se o site oficial de legislação passar em quatro critérios: HTTPS com certificado válido, robots.txt que permite o robô, texto da norma no HTML (sem depender de script) e cada semente conferida pelo título do ato.
+
+A tabela de alíquotas do Portal NFS-e não traz os maiores municípios, que têm NFS-e própria: São Paulo, Rio de Janeiro, Belo Horizonte, Campinas e Guarulhos estão ausentes do pacote de 03/09/2026. Para eles, a legislação municipal é a única fonte de alíquota.
+
+Sondagem de 17/11/2026, com o User-Agent do robô:
+
+| Município | Site oficial sondado | Resultado |
+|---|---|---|
+| São Paulo/SP (3550308) | `legislacao.prefeitura.sp.gov.br` (Catálogo de Legislação Municipal, Casa Civil) | **Coberto.** HTML no servidor; robots.txt ausente (responde HTML, tratado como ausente pela RFC 9309). O endereço inexistente devolve 200 com a página inicial (soft 404), por isso cada semente foi conferida pelo título. O texto do ato fica em `div.customStyle`; a redação anterior vem em `<del>` e é descartada. Sementes: Lei 13.701/2003, Decreto 53.151/2012 e Lei 14.097/2005 |
+| Porto Alegre/RS | `www2.portoalegre.rs.gov.br` | Bloqueado: robots.txt com `User-agent: *` + `Disallow: /` |
+| Curitiba/PR | `legisladocexterno.curitiba.pr.gov.br` | Bloqueado: robots.txt com `Disallow: /`, janela de visita das 4h às 6h45 UTC |
+| Salvador/BA | `leismunicipais.salvador.ba.gov.br` | Bloqueado: certificado TLS expirado |
+| Rio de Janeiro/RJ | `aplicnt.camara.rj.gov.br`, `www.camara.rio` | Bloqueado: cadeia TLS incompleta (`UNABLE_TO_VERIFY_LEAF_SIGNATURE`); `www.rio.rj.gov.br` não respondeu em 25 s |
+| Belo Horizonte/MG | `www.cmbh.mg.gov.br`, `dom-web.pbh.gov.br` | Bloqueado: o texto da lei é carregado por script (a página não contém o texto do ISS); o DOM é uma aplicação Vue |
+
+O robô não contorna nenhum desses bloqueios: não ignora robots.txt, não aceita certificado inválido e não executa script. Portais privados de compilação de leis municipais (ex.: `leismunicipais.com.br`) não são fonte oficial e não entram.
+
 ## Fora do escopo do MVP
 
-- **ISS (decidido: fica para fase posterior).** Inclui legislação municipal (5.570 municípios), sites de prefeituras, alíquotas de ISSQN e regras de apuração do ISS. Até lá, a plataforma informa apenas a situação de adesão dos municípios publicada pelo Portal NFS-e e responde perguntas sobre ISS como "fora do escopo por enquanto", sem interpretar. Quando a fase chegar, a entrada será município a município, sempre por fontes oficiais.
+- **ISS: coberto em parte desde a Fase 5.** Entram a tabela de alíquotas do Portal NFS-e (acima), a LC 116/2003 (Planalto) e a legislação dos municípios da seção "Legislação municipal". Os demais municípios entram um a um, sempre por site oficial que passe na sondagem.
 - **Secretarias estaduais de Fazenda.** São oficiais, mas não editam norma sobre NFS-e. Só entram se publicarem ato próprio relevante.
 - Jurisprudência e soluções de consulta. Possível expansão futura.
 

@@ -17,7 +17,10 @@ const MAX_SECAO = 200;
 
 const colapsar = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
-const ARTIGO = /^Art\.\s{0,3}(\d{1,4})\s{0,2}[º°o]?\s{0,2}(?:-\s{0,2}([A-Z]{1,2})(?![a-záéíóúç]))?/;
+// why: o sufixo ("Art. 62-A", "Art. 8º-A") vem colado ao número. O catálogo de São Paulo escreve "Art. 9º - São
+// responsáveis" e "Art. 11 - A legitimidade", com o hífen entre espaços; ler isso como "Art. 9-S" ou "Art. 11-A"
+// faria a resposta citar um dispositivo que não existe.
+const ARTIGO = /^Art\.\s{0,3}(\d{1,4})\s{0,2}[º°o]?(?:-([A-Z]{1,2})(?![\p{L}\d]))?/u;
 const ESTRUTURA_LEI = /^(LIVRO|T[ÍI]TULO|CAP[ÍI]TULO|Se[çc][ãa]o|SE[ÇC][ÃA]O|Subse[çc][ãa]o|SUBSE[ÇC][ÃA]O|ANEXO)\s/;
 
 /** `Art. 62-A.` → `Art. 62-A`; undefined se o texto não começa um artigo. */

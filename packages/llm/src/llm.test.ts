@@ -75,10 +75,13 @@ class ModeloFalso implements ClienteModelo {
 const uso = { modelo: 'claude-opus-5-5', tokensEntrada: 1000, tokensSaida: 200, tokensCacheLeitura: 0, tokensCacheEscrita: 0 };
 
 describe('roteador', () => {
-  it('recusa ISS municipal e consultoria antes de chamar o modelo', () => {
-    expect(classificarPergunta('Qual a alíquota do ISS em Curitiba?')).toBe('fora-do-escopo');
+  it('recusa consultoria antes de chamar o modelo; ISS tem rotas próprias (Fase 5)', () => {
+    expect(classificarPergunta('Qual a alíquota do ISS em Curitiba?')).toBe('iss-aliquota');
+    expect(classificarPergunta('Como funciona a retenção do ISSQN em São Paulo?')).toBe('iss');
+    expect(classificarPergunta('Qual a base de cálculo do imposto sobre serviços de qualquer natureza?')).toBe('iss');
     expect(classificarPergunta('Como fazer planejamento tributário para pagar menos imposto?')).toBe('fora-do-escopo');
-    expect(classificarPergunta('A NFS-e nacional substitui a nota do ISS da prefeitura?')).not.toBe('fora-do-escopo');
+    expect(classificarPergunta('Planejamento tributário: vale a pena mudar de município por causa da alíquota do ISS?')).toBe('fora-do-escopo');
+    expect(classificarPergunta('A NFS-e nacional substitui a nota do ISS da prefeitura?')).toBe('conceitual');
   });
 
   it('escolhe a rota mais determinística', () => {
@@ -197,7 +200,7 @@ describe('pipeline', () => {
     const modelo = new ModeloFalso(() => {
       throw new Error('não deveria chamar');
     });
-    expect((await responderPergunta('Qual a alíquota do ISS em São Paulo?', deps(modelo))).resposta.situacao).toBe('fora-do-escopo');
+    expect((await responderPergunta('Como fazer planejamento tributário para pagar menos imposto?', deps(modelo))).resposta.situacao).toBe('fora-do-escopo');
     const semEvidencia = await responderPergunta('Quando o IBS entra na NFS-e?', deps(modelo, []));
     expect(semEvidencia.resposta).toMatchObject({ situacao: 'sem-resposta', resposta: FRASE_SEM_RESPOSTA });
     expect(semEvidencia.custoUsd).toBe(0);

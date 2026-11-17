@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import {
+  AliquotasIss,
   CamposLeiaute,
+  ConsultaAliquotasIss,
+  ConsultaMunicipiosIss,
+  ListaMunicipiosIss,
   ConsultaBusca,
   ConsultaCampo,
   ConsultaDocumentos,
@@ -135,6 +139,20 @@ export function documentoOpenApi(): object {
           summary: 'Consulta exata por código numa tabela oficial (cClassTrib, NBS, indOp…)',
           parameters: [...parametros(ParametroTabela, 'path'), ...parametros(ConsultaReferencia, 'query')],
           responses: { '200': json('Linhas encontradas', LinhasReferencia), ...ERROS },
+        },
+      },
+      '/v1/iss/municipios': {
+        get: {
+          summary: 'Municípios cobertos para ISS: tabela oficial de alíquotas do Portal NFS-e e legislação municipal coletada',
+          parameters: parametros(ConsultaMunicipiosIss, 'query'),
+          responses: { '200': json('Municípios e cobertura', ListaMunicipiosIss), ...ERROS },
+        },
+      },
+      '/v1/iss/aliquotas': {
+        get: {
+          summary: 'Alíquotas de ISSQN de um município, com a linha exata do CSV oficial (sem escolha entre registros divergentes)',
+          parameters: parametros(ConsultaAliquotasIss, 'query'),
+          responses: { '200': json('Registros do município', AliquotasIss), ...ERROS },
         },
       },
       '/v1/leiaute/campos/{nome}': {

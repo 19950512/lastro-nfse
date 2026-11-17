@@ -61,7 +61,7 @@ export const AJUDA_SLACK = [
   '*Lastro* — NFS-e e reforma tributária só com fonte oficial.',
   '• `/lastro <pergunta>`: resposta com citação de cada fonte oficial.',
   '• `/lastro checar <texto>`: verifica as alegações de um post ou mensagem e gera um link público do resultado.',
-  'As respostas aparecem só para você. Não cobre ISS municipal; não substitui orientação profissional.',
+  'As respostas aparecem só para você. ISS: só alíquotas do Portal NFS-e, LC 116/2003 e legislação dos municípios coletados; não substitui orientação profissional.',
 ].join('\n');
 
 export function mensagemResposta(r: RespostaPergunta): string {

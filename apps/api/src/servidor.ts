@@ -47,11 +47,13 @@ const app = construirApp(
       clientes: abertas.clientes,
       conhecimento: abertas.conhecimento,
       fatos: abertas.fatos,
+      iss: abertas.iss,
       modelo,
       fontes: FONTES,
       orcamentoDiarioUsd,
     }),
     fatos: abertas.fatos,
+    iss: abertas.iss,
     verificacoes: criarServicoVerificacoes({
       clientes: abertas.clientes,
       verificacoes: abertas.verificacoes,

@@ -21,4 +21,6 @@ Regras:
 
 export const AVISO_PADRAO = 'Informação baseada em fontes oficiais; não substitui orientação profissional.';
 
-export const LIMITES_PADRAO = ['Não cobre ISS (legislação municipal, alíquotas, apuração) nesta versão.'] as const;
+export const LIMITES_PADRAO = [
+  'ISS: cobre a tabela de alíquotas de ISSQN publicada no Portal NFS-e, a LC 116/2003 e a legislação só dos municípios listados em /v1/iss/municipios.',
+] as const;

@@ -1,15 +1,17 @@
+import { CABECALHO_ALIQUOTAS_ISS, ehArquivoDeAliquotas, lerAliquotasIss, type TabelaAliquotasIss } from './aliquotas-iss.ts';
 import { blocosDeHtml, decodificarHtml } from './html.ts';
 import { extrairPaginasPdf } from './pdf.ts';
 import { tabelasDeXlsx, type TabelaReferencia } from './tabelas.ts';
 import { trechosDeHtml, trechosDePdf, type Trecho } from './trechos.ts';
 import { lerXlsx } from './xlsx.ts';
 import { camposDeXsd, type CampoLeiaute } from './xsd.ts';
-import { lerZip } from './zip.ts';
+import { LIMITES_ZIP_PADRAO, lerZip } from './zip.ts';
 
 export type Extracao =
   | { readonly tipo: 'texto'; readonly trechos: readonly Trecho[] }
   | { readonly tipo: 'tabelas'; readonly tabelas: readonly TabelaReferencia[]; readonly trechos: readonly Trecho[] }
   | { readonly tipo: 'leiaute'; readonly campos: readonly CampoLeiaute[]; readonly trechos: readonly Trecho[] }
+  | { readonly tipo: 'aliquotas'; readonly aliquotas: TabelaAliquotasIss; readonly trechos: readonly Trecho[] }
   | { readonly tipo: 'ignorado'; readonly motivo: string };
 
 const MIMES_HTML = new Set(['text/html', 'application/xhtml+xml']);
@@ -52,6 +54,25 @@ function trechosDeCampos(campos: readonly CampoLeiaute[]): Trecho[] {
   return numerar(textos);
 }
 
+const dataBr = (iso: string): string => iso.split('-').reverse().join('/');
+
+/** Resumo citável do pacote, para a busca encontrar a tabela; a consulta exata vai às linhas, não a estes trechos. */
+function trechosDeAliquotas(t: TabelaAliquotasIss): Trecho[] {
+  const referencia = t.dataReferencia === null ? '' : ` (extração de ${dataBr(t.dataReferencia)})`;
+  const porUf = new Map<string, number>();
+  for (const m of t.municipios) porUf.set(m.uf, (porUf.get(m.uf) ?? 0) + 1);
+  return numerar([
+    {
+      texto: `Alíquotas de ISSQN cadastradas pelos municípios no ambiente nacional da NFS-e${referencia}: ${t.municipios.length} municípios, ${t.total} registros por código de serviço, com início e fim de vigência. Colunas: ${CABECALHO_ALIQUOTAS_ISS.split(';').join('; ')}.`,
+      secao: 'alíquotas de ISSQN',
+    },
+    ...t.arquivos.map((a) => ({
+      texto: `Alíquotas de ISSQN${referencia}, arquivo ${a.nome}: ${a.linhas} registros de ${porUf.get(a.nome.slice(0, 2)) ?? 0} municípios.`,
+      secao: a.nome,
+    })),
+  ]);
+}
+
 /**
  * Extrai o conteúdo estruturado de um snapshot arquivado, conforme o tipo (ARQUITETURA.md §2.2).
  *
@@ -74,9 +95,13 @@ export async function extrairDocumento(corpo: Buffer, mime: string, url: string)
     return { tipo: 'tabelas', tabelas, trechos: trechosDeTabelas(tabelas) };
   }
   if (MIMES_ZIP.has(tipo)) {
-    const xsds = lerZip(corpo)
-      .filter((e) => e.nome.toLowerCase().endsWith('.xsd'))
-      .map((e) => ({ nome: e.nome, conteudo: new TextDecoder('utf-8').decode(e.conteudo) }));
+    const ehXsd = (nome: string): boolean => nome.toLowerCase().endsWith('.xsd');
+    const entradas = lerZip(corpo, LIMITES_ZIP_PADRAO, (nome) => ehXsd(nome) || ehArquivoDeAliquotas(nome));
+    const xsds = entradas.filter((e) => ehXsd(e.nome)).map((e) => ({ nome: e.nome, conteudo: new TextDecoder('utf-8').decode(e.conteudo) }));
+    if (xsds.length === 0 && entradas.some((e) => ehArquivoDeAliquotas(e.nome))) {
+      const aliquotas = lerAliquotasIss(entradas, [url]);
+      return { tipo: 'aliquotas', aliquotas, trechos: trechosDeAliquotas(aliquotas) };
+    }
     if (xsds.length === 0) return { tipo: 'ignorado', motivo: 'ZIP sem arquivos XSD' };
     const campos = camposDeXsd(xsds);
     return { tipo: 'leiaute', campos, trechos: trechosDeCampos(campos) };

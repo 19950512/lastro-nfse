@@ -136,10 +136,16 @@ O receptor confere o cabeçalho `lastro-assinatura: t=<unix>,v1=<hmac>`: HMAC-SH
 
 - Nome: **Lastro**, com o subtítulo "NFS-e e reforma tributária com fonte oficial". Domínio principal previsto: `lastro-nfse.com.br`. Depende da busca no INPI.
 - Somente fontes oficiais (órgãos públicos); nenhuma fonte não oficial é coletada ou citada.
-- ISS fica para uma fase posterior: legislação municipal, alíquotas, apuração e sites de prefeituras. A lista de serviços da LC 116 entra só como tabela de códigos usada no leiaute da NFS-e.
+- ISS entra na Fase 5, município a município. A tabela de alíquotas do Portal NFS-e é lida em código, sem modelo; a legislação municipal vem só de site oficial que passe na sondagem (o primeiro é São Paulo).
 - Stack: TypeScript / Node.js 24.
 - LLM: Claude (Anthropic API), modelo `claude-opus-5-5`.
 - Fase 0 (sondagem automatizada das fontes) e Fase 1 (monitor: coleta segura, arquivo versionado WORM, detecção de mudança e de anomalia, API do feed, webhooks e tela) implementadas.
 - Fase 2 (perguntas com fonte: parsers, índice, busca léxica, geração com citações e checagem, API autenticada e MCP) implementada, com o braço vetorial da busca aguardando a decisão de embeddings e a geração ainda sem validação contra a API real do Claude. Ver o estado de cada item e as pendências no [ROADMAP.md](docs/ROADMAP.md).
 - Fase 3 (grafo normativo, curadoria com dupla aprovação, fatos aprovados, verificador de alegações, link compartilhável e recall) implementada; o painel ainda não foi ligado a um provedor de SSO real e a verificação ainda não rodou contra a API real do Claude.
 - Fase 4 (planos e medição de uso, alertas por tema, portal público com CAPTCHA, bot de Slack, extensão de navegador e `security.txt`) implementada; faltam teste de intrusão externo e DAST antes de abrir o portal, escolher o provedor de CAPTCHA, criar o app do Slack, e WhatsApp e Teams.
+- Fase 5 (ISS) implementada:
+  - tabela oficial de alíquotas de ISSQN, com 1,9 milhão de linhas e 5.341 municípios, consultada sem modelo;
+  - legislação de São Paulo;
+  - rotas de pergunta próprias, `GET /v1/iss/municipios`, `GET /v1/iss/aliquotas` e a ferramenta MCP `consultar_aliquota_iss`.
+
+  Faltam mais municípios (os demais grandes municípios sondados estão bloqueados, ver FONTES-OFICIAIS.md), a busca em linguagem natural para a lei municipal e a verificação de alegações sobre ISS.

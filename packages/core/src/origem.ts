@@ -25,6 +25,8 @@ export const ORIGENS_OFICIAIS: readonly OrigemOficial[] = [
   { host: 'cgibs.gov.br', prefixos: ['/'], orgao: 'Comitê Gestor do IBS (CGIBS)' },
   { host: 'www.lexml.gov.br', prefixos: ['/'], orgao: 'LexML Brasil' },
   { host: 'www.nfe.fazenda.gov.br', prefixos: ['/portal/'], orgao: 'Portal Nacional da NF-e' },
+  // why: host inteiro liberado porque é dedicado ao catálogo de legislação da Prefeitura de São Paulo (Fase 5, ISS).
+  { host: 'legislacao.prefeitura.sp.gov.br', prefixos: ['/'], orgao: 'Prefeitura do Município de São Paulo' },
 ];
 
 export type ResultadoOrigem =

@@ -1,7 +1,7 @@
 import { createServer, request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Fonte } from '@lastro/core';
-import type { ConsultasArquivo, ConsultasConhecimento, ConsultasFatos } from '@lastro/db';
+import type { ConsultasArquivo, ConsultasConhecimento, ConsultasFatos, ConsultasIss } from '@lastro/db';
 import type { RespostaPergunta, ServicoPerguntas, ServicoVerificacoes } from '@lastro/llm';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -115,7 +115,42 @@ const fatos: ConsultasFatos = {
   obterRelacoes: () => Promise.resolve([]),
 };
 
-const deps: DependenciasMcp = { consultas, conhecimento, perguntas, fatos, verificacoes, fontes: FONTES };
+const LINHA_PUBLICADA = '3500105;SP;Adamantina;01.05.01.000;01.05.01.000;2;2025-08-01T00:00:00;';
+const iss: ConsultasIss = {
+  tabelaVigente: () =>
+    Promise.resolve({
+      extracaoId: '44444444-4444-4444-8444-444444444444',
+      snapshotId: '33333333-3333-4333-8333-333333333334',
+      documentoId: '11111111-1111-4111-8111-111111111112',
+      fonteId: 'nfse-rtc',
+      dataReferencia: '2026-09-03',
+      linhas: 1,
+      recusadas: 0,
+      arquivos: ['SP.csv'],
+      url: 'https://www.gov.br/nfse/pt-br/biblioteca/aliquotas/aliquotas-municipios-20260903-extr1.zip',
+      sha256: 'e'.repeat(64),
+      coletadoEm: '2026-11-17T10:00:00.000Z',
+      confirmadoEm: '2026-11-17T10:00:00.000Z',
+    }),
+  municipios: () => Promise.resolve([{ codigoIbge: '3500105', uf: 'SP', nome: 'Adamantina' }]),
+  buscarMunicipios: (_x, f) => Promise.resolve(f.codigoIbge === '3500105' ? [{ codigoIbge: '3500105', uf: 'SP', nome: 'Adamantina' }] : []),
+  aliquotas: () =>
+    Promise.resolve([
+      {
+        codigoIbge: '3500105',
+        codigoServico: '01.05.01.000',
+        incidencia: '01.05.01.000',
+        aliquota: '2',
+        inicio: '2025-08-01',
+        fim: null,
+        arquivo: 'SP.csv',
+        linha: 7,
+        textoPublicado: LINHA_PUBLICADA,
+      },
+    ]),
+};
+
+const deps: DependenciasMcp = { consultas, conhecimento, perguntas, fatos, verificacoes, fontes: FONTES, iss };
 
 let servidor: Server;
 let base: string;
@@ -227,7 +262,17 @@ describe('MCP remoto: ferramentas', () => {
     const cliente = await conectar(await token());
     const { tools } = await cliente.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
-      ['buscar_fontes_oficiais', 'consultar_codigo', 'consultar_prazo', 'explicar_campo_leiaute', 'listar_mudancas', 'obter_documento', 'perguntar_nfse', 'verificar_alegacao'].sort(),
+      [
+        'buscar_fontes_oficiais',
+        'consultar_aliquota_iss',
+        'consultar_codigo',
+        'consultar_prazo',
+        'explicar_campo_leiaute',
+        'listar_mudancas',
+        'obter_documento',
+        'perguntar_nfse',
+        'verificar_alegacao',
+      ].sort(),
     );
     for (const t of tools) expect(t.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, openWorldHint: false });
     await cliente.close();
@@ -276,6 +321,21 @@ describe('MCP remoto: ferramentas', () => {
     const corpo = JSON.parse((r.content as { text: string }[])[0]?.text ?? '') as { conteudo_externo: boolean; dados: { evidencia: { nivel: string } }[] };
     expect(corpo.conteudo_externo).toBe(true);
     expect(corpo.dados[0]?.evidencia.nivel).toBe('N2');
+    await cliente.close();
+  });
+
+  it('consultar_aliquota_iss devolve a linha exata do CSV oficial com URL e hash do pacote', async () => {
+    const cliente = await conectar(await token());
+    const r = await cliente.callTool({ name: 'consultar_aliquota_iss', arguments: { municipio: '3500105', servico: '1.05', data: '2026-11-17' } });
+    const corpo = JSON.parse((r.content as { text: string }[])[0]?.text ?? '') as {
+      conteudo_externo: boolean;
+      dados: { tabela: { sha256: string }; aliquotas: { linha_publicada: string; vigente_na_data: boolean }[] };
+    };
+    expect(corpo.conteudo_externo).toBe(true);
+    expect(corpo.dados.tabela.sha256).toBe('e'.repeat(64));
+    expect(corpo.dados.aliquotas).toEqual([expect.objectContaining({ linha_publicada: LINHA_PUBLICADA, vigente_na_data: true })]);
+    const invalido = await cliente.callTool({ name: 'consultar_aliquota_iss', arguments: { municipio: '3500105', servico: '2026%' } });
+    expect(invalido.isError).toBe(true);
     await cliente.close();
   });
 

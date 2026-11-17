@@ -14,6 +14,11 @@ const RISCADOS = new Set(['strike', 's', 'del']);
 const BLOCOS = new Set([
   'p', 'div', 'li', 'tr', 'table', 'section', 'article', 'blockquote', 'dt', 'dd', 'pre', 'center', 'ul', 'ol', 'dl', 'body', 'main', 'aside', 'figcaption', 'caption',
 ]);
+// why: o catálogo de legislação da Prefeitura de São Paulo (Fase 5) não marca área principal; o ato inteiro fica em
+// `<div class="col s12 customStyle">` (a ementa repete a classe com `bx-ementa`; `texto_compilado` é só o breadcrumb).
+// Conferido nas três páginas coletadas em 17/11/2026. invariant: mesma regra de `normalizarHtml` (packages/ingest).
+const temClasse = (classe: string, nome: string): boolean => classe.split(/\s+/).includes(nome);
+const areaDeTextoLegal = (classe: string): boolean => temClasse(classe, 'customStyle') && !temClasse(classe, 'bx-ementa');
 const TITULOS = new Map([['h1', 1], ['h2', 2], ['h3', 3], ['h4', 4], ['h5', 5], ['h6', 6]]);
 
 const colapsar = (s: string): string => s.replace(/\s+/g, ' ').trim();
@@ -84,7 +89,9 @@ export function blocosDeHtml(html: string): BlocoHtml[] {
       onopentag(nome, atributos) {
         const ignorar = IGNORAR.has(nome) || RISCADOS.has(nome);
         const ehRegiao =
-          !estado.regiaoEncontrada && estado.ignorados === 0 && (nome === 'main' || atributos.role === 'main' || atributos.id === 'content');
+          !estado.regiaoEncontrada &&
+          estado.ignorados === 0 &&
+          (nome === 'main' || atributos.role === 'main' || atributos.id === 'content' || areaDeTextoLegal(atributos.class ?? ''));
         if (ehRegiao) {
           descarregar();
           estado.regiaoEncontrada = true;

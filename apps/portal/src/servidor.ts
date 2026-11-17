@@ -66,7 +66,7 @@ if ((await abertas.clientes.limites(clienteId)) === undefined) {
 
 const app = construirPortal(
   {
-    perguntas: criarServicoPerguntas({ clientes: abertas.clientes, conhecimento: abertas.conhecimento, fatos: abertas.fatos, modelo, fontes: FONTES, orcamentoDiarioUsd }),
+    perguntas: criarServicoPerguntas({ clientes: abertas.clientes, conhecimento: abertas.conhecimento, fatos: abertas.fatos, iss: abertas.iss, modelo, fontes: FONTES, orcamentoDiarioUsd }),
     verificacoes: criarServicoVerificacoes({
       clientes: abertas.clientes,
       verificacoes: abertas.verificacoes,

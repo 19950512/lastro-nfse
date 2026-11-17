@@ -140,7 +140,7 @@ export function construirPortal(deps: DependenciasPortal, opcoes: OpcoesPortal =
 <body><main>
 <nav><a href="/">Perguntar</a><a href="/verificar">Isso é verdade?</a></nav>
 ${corpo}
-<footer class="meta">Respostas montadas só com documentos de órgãos oficiais (Receita Federal, CGIBS, Comitê Gestor da NFS-e, Planalto), com link e data de coleta de cada fonte. Não cobre ISS municipal. Não substitui orientação profissional.</footer>
+<footer class="meta">Respostas montadas só com documentos de órgãos oficiais (Receita Federal, CGIBS, Comitê Gestor da NFS-e, Planalto, prefeituras), com link e data de coleta de cada fonte. ISS: alíquotas da tabela do Portal NFS-e, LC 116/2003 e legislação só dos municípios coletados. Não substitui orientação profissional.</footer>
 </main></body></html>`;
   }
 

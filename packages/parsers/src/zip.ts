@@ -54,7 +54,11 @@ function exigirIntervalo(corpo: Buffer, inicio: number, tamanho: number, context
  * invariant: nenhum byte é descompactado além de min(limite por arquivo, orçamento total restante);
  * o `maxOutputLength` do zlib interrompe a descompressão no limite, mesmo que o cabeçalho minta.
  */
-export function lerZip(corpo: Buffer, limites: LimitesZip = LIMITES_ZIP_PADRAO): EntradaZip[] {
+export function lerZip(
+  corpo: Buffer,
+  limites: LimitesZip = LIMITES_ZIP_PADRAO,
+  incluir: (nome: string) => boolean = () => true,
+): EntradaZip[] {
   if (corpo.length < TAMANHO_FIM) throw new ErroParser('ZIP pequeno demais');
   const fim = localizarFim(corpo);
   if (fim >= 20 && corpo.readUInt32LE(fim - 20) === ASSINATURA_LOCALIZADOR_ZIP64) throw new ErroParser('ZIP64 não suportado');
@@ -95,6 +99,9 @@ export function lerZip(corpo: Buffer, limites: LimitesZip = LIMITES_ZIP_PADRAO):
     if ((flags & 0x1) !== 0) throw new ErroParser(`ZIP com entrada cifrada: ${nome}`);
     if (compactado === 0xffffffff || descompactado === 0xffffffff || deslocamentoLocal === 0xffffffff) throw new ErroParser('ZIP64 não suportado');
     if (nome.endsWith('/')) continue;
+    // why: entrada fora do filtro não é descompactada nem consome orçamento (ex.: o TXT de 145 MB que repete
+    // os CSV por UF no pacote de alíquotas de ISSQN); nome e cifragem continuam conferidos acima.
+    if (!incluir(nome)) continue;
 
     const limite = Math.min(limites.maxBytesPorArquivo, orcamento);
     if (descompactado > limite) throw new ErroParser(`ZIP: ${nome} excede o limite de descompressão`);

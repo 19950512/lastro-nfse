@@ -1,4 +1,5 @@
 export * from './checagem.ts';
+export * from './iss.ts';
 export * from './modelo.ts';
 export * from './pipeline.ts';
 export * from './prompt.ts';

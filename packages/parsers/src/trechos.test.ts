@@ -26,6 +26,15 @@ describe('blocosDeHtml', () => {
     ]);
   });
 
+  it('catálogo de legislação de São Paulo: só o ato (div.customStyle sem bx-ementa), sem menu, ementa nem redação anterior (<del>)', () => {
+    const html = `<body><div class="sec-bar">Acessibilidade</div><div class="texto_compilado"><ol class="breadcrumb"><li>Você está em:</li></ol></div>
+      <div class="col s12 push-s0 bx-ementa customStyle">Altera a legislação do ISS.</div>
+      <div class="col s12 customStyle"><p>Art. 1º - O Imposto tem como fato gerador:</p><p><del>1.03 - Processamento de dados.</del></p>
+      <p>1.03 - Processamento, armazenamento ou hospedagem de dados.</p></div><div class="cpm-footer">Rodapé</div></body>`;
+    expect(blocosDeHtml(html).map((b) => b.texto)).toEqual(['Art. 1º - O Imposto tem como fato gerador:', '1.03 - Processamento, armazenamento ou hospedagem de dados.']);
+    expect(blocosDeHtml('<body><p>menu</p><div class="customStyleX"><p>a</p></div></body>').map((b) => b.texto)).toEqual(['menu', 'a']);
+  });
+
   it('sem área principal, usa a página toda', () => {
     expect(blocosDeHtml('<body><p>um</p><p>dois<br>três</p></body>').map((b) => b.texto)).toEqual(['um', 'dois', 'três']);
   });
@@ -39,6 +48,16 @@ describe('trechosDeHtml', () => {
     expect(secaoDeArtigo('Art. 1º Fica')).toBe('Art. 1');
     expect(secaoDeArtigo('Art. 10. Considera-se')).toBe('Art. 10');
     expect(secaoDeArtigo('Artigo qualquer')).toBeUndefined();
+    expect(secaoDeArtigo('Art. 8º-A A alíquota mínima')).toBe('Art. 8-A');
+    expect(secaoDeArtigo('Art. 16-F. Nas ausências')).toBe('Art. 16-F');
+  });
+
+  it('hífen entre espaços (estilo do catálogo de São Paulo) não é sufixo de artigo', () => {
+    expect(secaoDeArtigo('Art. 9º - São responsáveis pelo pagamento')).toBe('Art. 9');
+    expect(secaoDeArtigo('Art. 1º - O Imposto sobre Serviços')).toBe('Art. 1');
+    expect(secaoDeArtigo('Art. 11 - A legitimidade para requerer')).toBe('Art. 11');
+    expect(secaoDeArtigo('Art. 14-AB texto')).toBe('Art. 14-AB');
+    expect(secaoDeArtigo('Art. 14-Ação')).toBe('Art. 14');
   });
 
   it('em texto legal, um trecho por artigo, com títulos estruturais junto do artigo seguinte', () => {

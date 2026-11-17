@@ -84,7 +84,9 @@ Classifica a pergunta e escolhe o caminho mais determinístico possível:
 | Prazo / cronograma | "Quando o Simples é obrigado a usar o emissor nacional?" | Fatos aprovados primeiro; busca só complementa |
 | Conceitual | "Como a NFS-e se relaciona com o IBS?" | Busca híbrida + geração com citações |
 | Verificação | "É verdade que…" | Pipeline de [verificação de alegações](VERIFICACAO-DE-ALEGACOES.md) |
-| Fora do escopo | ISS (lei municipal, alíquota, apuração), consultoria tributária | Recusa explicando o limite e indicando onde procurar |
+| Alíquota de ISS (Fase 5) | "Qual a alíquota do ISS em Adamantina/SP para o item 1.05?" | Município da tabela do Portal NFS-e: resposta montada em código, sem modelo, citando a linha exata do CSV. Município só com legislação coletada: busca restrita à lei dele e à LC 116. Sem município: só a LC 116 |
+| Apuração de ISS (Fase 5) | "Quem retém o ISS em São Paulo?" | Busca restrita à LC 116 e, se o município for coberto, à lei dele; município sem legislação coletada: só a LC 116, com aviso; município ambíguo: pede a UF |
+| Fora do escopo | Consultoria tributária | Recusa explicando o limite e indicando onde procurar |
 
 ### 2.6 Geração com citações
 
@@ -128,7 +130,7 @@ Antes de devolver a resposta:
     }
   ],
   "conflitos": [],
-  "limites": ["Não cobre ISS (legislação municipal, alíquotas, apuração) nesta versão."],
+  "limites": ["ISS: cobre a tabela de alíquotas de ISSQN publicada no Portal NFS-e, a LC 116/2003 e a legislação só dos municípios listados em /v1/iss/municipios."],
   "aviso": "Informação baseada em fontes oficiais; não substitui orientação profissional."
 }
 ```
@@ -168,6 +170,8 @@ O identificador público de um *snapshot* (`documento + sha256`) é estável: qu
 | GET | `/v1/leiaute/campos/{nome}?versao=` | Definição de campo do leiaute |
 | POST, GET, DELETE | `/v1/alertas` | Alertas por tema do cliente (termos no texto que mudou, temas de fatos curados, fonte, tipo de evento) |
 | GET | `/v1/uso` | Plano, limites e uso medido do cliente |
+| GET | `/v1/iss/municipios` | Cobertura de ISS por município: tabela de alíquotas do Portal NFS-e e legislação municipal coletada |
+| GET | `/v1/iss/aliquotas?municipio=&servico=&data=` | Alíquotas de ISSQN do município, com a linha exata do CSV oficial, vigência na data, cancelados e divergências |
 
 Autenticação por chave de API por cliente, limite de requisições e medição de uso por chave. Especificação OpenAPI gerada a partir dos schemas Zod.
 
@@ -176,6 +180,8 @@ Estado na Fase 2: além das rotas da Fase 1, existem `/v1/busca`, `/v1/referenci
 Papéis de banco da Fase 3: `lastro_curadoria` (painel: lê índice e propostas, insere fatos, relações e decisões, recall só pela função `registrar_recall`, mantém sessões) e o processador ganhou INSERT em `metadado_ato`, `relacao_normativa` e `fato` (só propostas). A API lê fatos e relações pelas views `fato_publico` e `relacao_publica`, que só mostram o que passou pela dupla aprovação.
 
 Papéis de banco da Fase 2: `lastro_processador` (lê snapshots, insere extração, trechos, tabelas e campos) e `lastro_api` (lê arquivo e conhecimento, autentica chaves só pela função `autenticar_chave`, grava `consulta_log` sob RLS). O disjuntor global de gasto usa a função `gasto_llm_global`, a única leitura que atravessa clientes.
+
+Tabelas da Fase 5 (só inserção): `tabela_aliquota_iss` (um pacote de alíquotas por extração, com a data de extração declarada no nome do arquivo), `municipio_iss` e `aliquota_iss` (valores como publicados, com arquivo e linha do CSV); a view `tabela_aliquota_iss_vigente` escolhe o pacote de data mais recente. O processador só insere; `lastro_api` e `lastro_leitor` só leem. A ferramenta MCP `consultar_aliquota_iss` usa as mesmas consultas.
 
 Papéis e tabelas da Fase 4: `plano` e a view `cliente_limites` (limite efetivo = exceção do cliente ou plano); `uso_diario` (medição por cliente, dia UTC e métrica), gravada pelo gatilho `consulta_log_medicao` e pela função `registrar_requisicoes`, e lida pela API sob RLS; `webhook_assinatura` ganhou `cliente_id`, `nome`, `termos` e `temas`, com RLS para `lastro_api` (o notificador lê todas, e a coluna `segredo` não é legível pela API); `canal_slack` (workspace → cliente), lida só pela função `cliente_do_slack`.
 
@@ -193,6 +199,7 @@ Exposto em Streamable HTTP (remoto, com autenticação) e stdio (uso local). Fer
 | `consultar_prazo` | Fatos aprovados sobre prazos/cronogramas |
 | `consultar_codigo` | Linha exata de tabela oficial |
 | `explicar_campo_leiaute` | Definição versionada de campo |
+| `consultar_aliquota_iss` | Alíquotas de ISSQN de um município, com a linha exata do CSV oficial (Fase 5) |
 
 Recursos MCP: `nfse://fontes`, `nfse://documento/{id}`, `nfse://mudancas/recentes`.
 

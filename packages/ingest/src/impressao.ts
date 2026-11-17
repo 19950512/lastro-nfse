@@ -4,6 +4,11 @@ import { decodificarHtml } from './links.ts';
 
 const IGNORAR = new Set(['head', 'script', 'style', 'noscript', 'template', 'svg', 'iframe']);
 const MIMES_HTML = new Set(['text/html', 'application/xhtml+xml']);
+// why: o catálogo de legislação da Prefeitura de São Paulo (Fase 5) não marca área principal; o ato inteiro fica em
+// `<div class="col s12 customStyle">` (a ementa repete a classe com `bx-ementa`). Sem isto, mudança de menu vira
+// "nova versão" da lei. invariant: mesma regra de `blocosDeHtml` em packages/parsers/src/html.ts.
+const temClasse = (classe: string, nome: string): boolean => classe.split(/\s+/).includes(nome);
+const areaDeTextoLegal = (classe: string): boolean => temClasse(classe, 'customStyle') && !temClasse(classe, 'bx-ementa');
 
 /**
  * Texto normalizado de uma página: texto visível + destinos de links, sem `<head>`, scripts e
@@ -32,7 +37,7 @@ export function normalizarHtml(html: string): string {
         const ehRegiao =
           !estado.regiaoEncontrada &&
           estado.ignorados === 0 &&
-          (nome === 'main' || atributos.role === 'main' || atributos.id === 'content');
+          (nome === 'main' || atributos.role === 'main' || atributos.id === 'content' || areaDeTextoLegal(atributos.class ?? ''));
         if (ehRegiao) estado.regiaoEncontrada = true;
         pilha.push({ ignorar, regiao: ehRegiao });
         if (ignorar) estado.ignorados++;

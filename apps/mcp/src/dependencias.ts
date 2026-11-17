@@ -21,8 +21,9 @@ export async function abrirDependencias(ambiente: NodeJS.ProcessEnv = process.en
       consultas: aberta.consultas,
       conhecimento: aberta.conhecimento,
       fontes: FONTES,
-      perguntas: criarServicoPerguntas({ clientes: aberta.clientes, conhecimento: aberta.conhecimento, fatos: aberta.fatos, modelo, fontes: FONTES, orcamentoDiarioUsd }),
+      perguntas: criarServicoPerguntas({ clientes: aberta.clientes, conhecimento: aberta.conhecimento, fatos: aberta.fatos, iss: aberta.iss, modelo, fontes: FONTES, orcamentoDiarioUsd }),
       fatos: aberta.fatos,
+      iss: aberta.iss,
       verificacoes: criarServicoVerificacoes({
         clientes: aberta.clientes,
         verificacoes: aberta.verificacoes,

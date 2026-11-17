@@ -27,6 +27,14 @@ describe('normalizarHtml', () => {
     expect(normalizarHtml(html)).toBe('RTC');
   });
 
+  it('catálogo de legislação de São Paulo: mudança no menu não é versão nova da lei', () => {
+    const lei = '<div class="col s12 push-s0 bx-ementa customStyle">Ementa</div><div class="col s12 customStyle"><p>Art. 16. Alíquota de 2,9%.</p></div>';
+    const a = `<body><div class="sec-bar">Acessibilidade</div>${lei}<div class="cpm-footer">2026</div></body>`;
+    const b = `<body><div class="sec-bar">Acessibilidade | Ouvidoria</div>${lei}<div class="cpm-footer">2027</div></body>`;
+    expect(normalizarHtml(a)).toBe(normalizarHtml(b));
+    expect(normalizarHtml(a)).toBe('Art. 16. Alíquota de 2,9%.');
+  });
+
   it('detecta mudança de texto e de destino de link', () => {
     const base = '<main><a href="nt-009-v1-01.pdf">NT 009</a></main>';
     expect(normalizarHtml(base)).not.toBe(normalizarHtml('<main><a href="nt-009-v1-02.pdf">NT 009</a></main>'));

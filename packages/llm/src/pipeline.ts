@@ -1,9 +1,22 @@
 import type { Fonte } from '@lastro/core';
+import type { ConsultasIss } from '@lastro/db';
 import { checarResposta, dataBrasil, dataIsoBrasil, respostaSemModelo } from './checagem.ts';
+import {
+  dataCitada,
+  FONTE_LEGISLACAO_FEDERAL,
+  identificarMunicipio,
+  MAX_LINHAS_ALIQUOTA,
+  municipiosConhecidos,
+  respostaAliquotas,
+  servicosCitados,
+  textoCandidatos,
+} from './iss.ts';
 import { custoUsd, type ClienteModelo, type Esforco, type ResultadoBusca, type UsoModelo } from './modelo.ts';
 import { FRASE_SEM_RESPOSTA, PROMPT_SISTEMA } from './prompt.ts';
 import { candidatosCampo, candidatosCodigo, classificarPergunta, type Rota } from './roteador.ts';
 import type { Evidencia, RespostaPergunta } from './tipos.ts';
+
+export type { ConsultasIss };
 
 export const MAX_PERGUNTA = 1000;
 const MAX_EVIDENCIAS = 10;
@@ -19,6 +32,8 @@ const MAX_BLOCO = 600;
 const MIN_BLOCO = 40;
 
 const ESFORCO: Readonly<Record<Exclude<Rota, 'fora-do-escopo'>, Esforco>> = {
+  'iss-aliquota': 'medium',
+  iss: 'medium',
   codigo: 'low',
   campo: 'low',
   prazo: 'medium',
@@ -31,7 +46,9 @@ const MAX_TOKENS = 4096;
 export interface DependenciasPipeline {
   readonly modelo: ClienteModelo;
   readonly fontes: readonly Fonte[];
-  buscarTrechos(consulta: string, limite: number): Promise<Evidencia[]>;
+  // why: as rotas de ISS só podem ler a legislação federal e a do município citado, nunca a base inteira.
+  buscarTrechos(consulta: string, limite: number, fontes?: readonly string[]): Promise<Evidencia[]>;
+  readonly iss?: Pick<ConsultasIss, 'tabelaVigente' | 'municipios' | 'aliquotas'>;
   buscarCodigos?(codigos: readonly string[]): Promise<Evidencia[]>;
   buscarCampos?(nomes: readonly string[]): Promise<Evidencia[]>;
   /** Trechos oficiais que sustentam fatos aprovados pela curadoria (rota de prazo). */
@@ -101,7 +118,54 @@ function paraResultado(ev: Evidencia, fontes: ReadonlyMap<string, Fonte>): Resul
 }
 
 const FORA_DO_ESCOPO =
-  'Esta pergunta está fora do escopo atual: a plataforma ainda não cobre ISS (legislação municipal, alíquotas e apuração) nem faz consultoria tributária. Para ISS, consulte a legislação e o portal da prefeitura do município; para orientação sobre o seu caso, um profissional habilitado.';
+  'Esta pergunta está fora do escopo: a plataforma não faz consultoria tributária nem recomenda conduta. Para orientação sobre o seu caso, procure um profissional habilitado.';
+
+type PlanoIss =
+  | { readonly tipo: 'resposta'; readonly resposta: RespostaPergunta }
+  | { readonly tipo: 'busca'; readonly fontes: readonly string[]; readonly avisos: readonly string[] };
+
+/**
+ * Caminho de uma pergunta de ISS (Fase 5).
+ *
+ * invariant: a busca de ISS nunca mistura municípios. Sem município citado, ou com município sem legislação coletada,
+ * só a legislação federal (LC 116/2003) entra; com município coberto, a lei dele e a federal. Alíquota de município da
+ * tabela oficial sai da tabela, sem modelo.
+ */
+async function planejarIss(pergunta: string, rota: 'iss' | 'iss-aliquota', deps: DependenciasPipeline, agora: Date): Promise<PlanoIss> {
+  const tabela = deps.iss === undefined ? undefined : await deps.iss.tabelaVigente();
+  const daTabela = tabela === undefined || deps.iss === undefined ? [] : await deps.iss.municipios(tabela.extracaoId);
+  const identificacao = identificarMunicipio(pergunta, municipiosConhecidos(daTabela, deps.fontes));
+  const semResposta = (texto: string): PlanoIss => ({ tipo: 'resposta', resposta: respostaSemModelo(rota, 'sem-resposta', texto, agora) });
+  const federal: PlanoIss = { tipo: 'busca', fontes: [FONTE_LEGISLACAO_FEDERAL], avisos: [] };
+
+  if (identificacao.tipo === 'ambiguo') {
+    return semResposta(`A pergunta pode se referir a mais de um município: ${textoCandidatos(identificacao.candidatos)}. Indique um município com a UF (ex.: "Campinas/SP") ou o código IBGE.`);
+  }
+  if (identificacao.tipo === 'nenhum') {
+    return rota === 'iss-aliquota' ? { ...federal, avisos: ['Para a alíquota de um município, cite o município (nome e UF ou código IBGE).'] } : federal;
+  }
+
+  const m = identificacao.municipio;
+  if (rota === 'iss-aliquota' && m.naTabela && tabela !== undefined && deps.iss !== undefined) {
+    const citados = servicosCitados(pergunta);
+    const prefixos = citados.length === 0 ? null : citados;
+    const linhas = await deps.iss.aliquotas(tabela.extracaoId, m.codigoIbge, prefixos, MAX_LINHAS_ALIQUOTA);
+    return {
+      tipo: 'resposta',
+      resposta: respostaAliquotas({ municipio: m, tabela, linhas, prefixos, data: dataCitada(pergunta) ?? dataIsoBrasil(agora), agora, fontes: deps.fontes, rota }),
+    };
+  }
+  if (m.fonteLegislacao !== null) return { tipo: 'busca', fontes: [m.fonteLegislacao, FONTE_LEGISLACAO_FEDERAL], avisos: [] };
+  const nome = `${m.nome}/${m.uf}`;
+  if (rota === 'iss-aliquota') {
+    const tabelaTexto = tabela === undefined ? 'A tabela de alíquotas de ISSQN do Portal NFS-e ainda não foi coletada' : `A tabela de alíquotas de ISSQN do Portal NFS-e não traz ${nome}`;
+    return semResposta(`${tabelaTexto}, e a legislação municipal de ${nome} ainda não é coletada pela plataforma. Consulte a lei do município no site oficial da prefeitura.`);
+  }
+  return {
+    ...federal,
+    avisos: [`A legislação municipal de ${nome} não está na base; a resposta usa só a legislação federal (LC 116/2003), que vale para todos os municípios. Regras próprias do município não foram consultadas.`],
+  };
+}
 
 export async function responderPergunta(pergunta: string, deps: DependenciasPipeline): Promise<ResultadoPipeline> {
   const agora = (deps.agora ?? (() => new Date()))();
@@ -110,6 +174,16 @@ export async function responderPergunta(pergunta: string, deps: DependenciasPipe
   const vazio = { perguntaMinimizada: minimizada, evidenciasCitadas: [], uso: null, custoUsd: 0 } as const;
 
   if (rota === 'fora-do-escopo') return { ...vazio, resposta: respostaSemModelo(rota, 'fora-do-escopo', FORA_DO_ESCOPO, agora) };
+
+  let fontesBusca: readonly string[] | undefined;
+  let avisosIss: readonly string[] = [];
+  if (rota === 'iss' || rota === 'iss-aliquota') {
+    const plano = await planejarIss(minimizada, rota, deps, agora);
+    if (plano.tipo === 'resposta') return { ...vazio, resposta: plano.resposta };
+    fontesBusca = plano.fontes;
+    avisosIss = plano.avisos;
+  }
+  const comAvisos = (r: RespostaPergunta): RespostaPergunta => (avisosIss.length === 0 ? r : { ...r, avisos: [...avisosIss, ...r.avisos] });
 
   const extras: Evidencia[] = [];
   if (rota === 'codigo' && deps.buscarCodigos !== undefined) {
@@ -122,7 +196,7 @@ export async function responderPergunta(pergunta: string, deps: DependenciasPipe
   }
   // why: prazo e cronograma vão primeiro aos fatos aprovados pela curadoria (ARQUITETURA.md §2.5); a busca só complementa.
   if (rota === 'prazo' && deps.buscarFatos !== undefined) extras.push(...(await deps.buscarFatos(minimizada, FATOS_POR_PERGUNTA)));
-  const trechos = await deps.buscarTrechos(minimizada, TRECHOS_POR_PERGUNTA);
+  const trechos = fontesBusca === undefined ? await deps.buscarTrechos(minimizada, TRECHOS_POR_PERGUNTA) : await deps.buscarTrechos(minimizada, TRECHOS_POR_PERGUNTA, fontesBusca);
   let evidencias = semRepetir([...extras.slice(0, MAX_EVIDENCIAS - Math.min(trechos.length, 4)), ...trechos]).slice(0, MAX_EVIDENCIAS);
   if (deps.situacaoNormativa !== undefined && evidencias.length > 0) {
     const s = await deps.situacaoNormativa([...new Set(evidencias.map((e) => e.documentoId))]);
@@ -131,7 +205,7 @@ export async function responderPergunta(pergunta: string, deps: DependenciasPipe
   }
 
   // why: sem evidência não há o que citar; responder "não encontrei" aqui evita custo e qualquer chance de invenção.
-  if (evidencias.length === 0) return { ...vazio, resposta: respostaSemModelo(rota, 'sem-resposta', FRASE_SEM_RESPOSTA, agora) };
+  if (evidencias.length === 0) return { ...vazio, resposta: comAvisos(respostaSemModelo(rota, 'sem-resposta', FRASE_SEM_RESPOSTA, agora)) };
 
   const fontes = new Map(deps.fontes.map((f) => [f.id, f]));
   const resultados = evidencias.map((ev) => paraResultado(ev, fontes));
@@ -151,5 +225,5 @@ export async function responderPergunta(pergunta: string, deps: DependenciasPipe
     fontes: deps.fontes,
     agora,
   });
-  return { resposta, perguntaMinimizada: minimizada, evidenciasCitadas, uso: gerada.uso, custoUsd: custoUsd(gerada.uso) };
+  return { resposta: comAvisos(resposta), perguntaMinimizada: minimizada, evidenciasCitadas, uso: gerada.uso, custoUsd: custoUsd(gerada.uso) };
 }

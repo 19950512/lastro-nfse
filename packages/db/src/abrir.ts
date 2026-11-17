@@ -6,6 +6,7 @@ import { ClientesPostgres, retencaoConsultasDias, type RepositorioClientes } fro
 import { ConhecimentoPostgres, type ConsultasConhecimento } from './conhecimento.ts';
 import { CuradoriaPostgres, type RepositorioCuradoria } from './curadoria.ts';
 import { FatosPostgres, type ConsultasFatos } from './fatos.ts';
+import { IssPostgres, type ConsultasIss } from './iss.ts';
 import { processarNormasPorRegras, type ResumoNormativo } from './normativo.ts';
 import { VerificacoesPostgres, type RepositorioVerificacoes } from './verificacoes.ts';
 import { ConsultasPostgres, type ConsultasArquivo } from './consultas.ts';
@@ -80,6 +81,7 @@ export interface ApiAberta {
   readonly clientes: RepositorioClientes;
   readonly fatos: ConsultasFatos;
   readonly verificacoes: RepositorioVerificacoes;
+  readonly iss: ConsultasIss;
   readonly lerOriginal: (sha: string) => Promise<Buffer>;
   /** why: repositórios de outros pacotes (alertas em @lastro/webhooks) usam o mesmo pool e papel. */
   readonly pool: pg.Pool;
@@ -104,6 +106,7 @@ export async function abrirApi(ambiente: NodeJS.ProcessEnv = process.env): Promi
     clientes: new ClientesPostgres(pool, retencao),
     fatos: new FatosPostgres(pool),
     verificacoes: new VerificacoesPostgres(pool, retencao),
+    iss: new IssPostgres(pool),
     lerOriginal: (sha) => storage.ler(sha),
     pool,
     fechar: async () => {

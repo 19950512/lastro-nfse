@@ -1,3 +1,4 @@
+export * from './aliquotas-iss.ts';
 export * from './erro.ts';
 export * from './extrair.ts';
 export * from './html.ts';

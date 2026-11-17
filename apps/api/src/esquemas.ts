@@ -1,4 +1,6 @@
+import { prefixoCodigoServico, UFS } from '@lastro/core';
 import { TIPOS_EVENTO } from '@lastro/ingest';
+import { ROTAS } from '@lastro/llm';
 import { z } from 'zod';
 
 const dataConsulta = z
@@ -193,6 +195,79 @@ export const CamposLeiaute = z.object({
   ),
 });
 
+const codigoIbge = z.string().regex(/^\d{7}$/).describe('Código IBGE do município (7 dígitos)');
+
+export const ConsultaMunicipiosIss = z.strictObject({
+  nome: z.string().trim().min(2).max(120).optional().describe('Início do nome, sem diferenciar acento nem maiúscula'),
+  uf: z.enum(UFS).optional(),
+  codigo_ibge: codigoIbge.optional(),
+  limite: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+const TabelaAliquotasIss = Origem.extend({
+  data_referencia: z.iso.date().nullable().describe('Data de extração declarada no nome do pacote oficial'),
+  linhas: z.number().int(),
+  confirmado_em: z.iso.datetime().describe('Última coleta que confirmou este pacote na fonte'),
+});
+
+const MunicipioIss = z.object({ codigo_ibge: z.string(), uf: z.string(), nome: z.string() });
+
+export const ListaMunicipiosIss = z.object({
+  tabela_aliquotas: TabelaAliquotasIss.nullable().describe('Pacote de alíquotas de ISSQN vigente; null se ainda não coletado'),
+  municipios: z.array(
+    MunicipioIss.extend({
+      aliquotas_na_tabela: z.boolean().describe('O município tem registros na tabela oficial de alíquotas do Portal NFS-e'),
+      legislacao: z
+        .object({ fonte_id: z.string(), orgao: z.string(), nivel, sementes: z.array(z.url()) })
+        .nullable()
+        .describe('Legislação municipal coletada pela plataforma; null se o município ainda não é coberto'),
+    }),
+  ),
+});
+
+export const ConsultaAliquotasIss = z.strictObject({
+  municipio: codigoIbge,
+  servico: z
+    .string()
+    .trim()
+    .max(20)
+    .transform((s, ctx) => {
+      const prefixo = prefixoCodigoServico(s);
+      if (prefixo === null) {
+        ctx.addIssue({ code: 'custom', message: 'código de serviço inválido (ex.: 1.05, 010501, 01.05.01.000)' });
+        return z.NEVER;
+      }
+      return prefixo;
+    })
+    .optional()
+    .describe('Subitem da LC 116 (1.05), código de tributação nacional (010501) ou código completo (01.05.01.000)'),
+  data: z.iso.date().optional().describe('Data de vigência (padrão: hoje, em Brasília)'),
+  limite: z.coerce.number().int().min(1).max(1000).default(400),
+});
+
+export const AliquotasIss = z.object({
+  tabela: TabelaAliquotasIss,
+  municipio: MunicipioIss,
+  data: z.iso.date(),
+  servico_prefixo: z.string().nullable(),
+  aliquotas: z.array(
+    z.object({
+      codigo_servico: z.string(),
+      incidencia: z.string(),
+      aliquota: z.string().nullable().describe('Como publicada (vírgula decimal); null quando a célula está vazia'),
+      vigente_na_data: z.boolean(),
+      cancelado: z.boolean().describe('Fim anterior ao início no cadastro: o registro não vale em data nenhuma'),
+      inicio: z.iso.date(),
+      fim: z.iso.date().nullable(),
+      arquivo: z.string(),
+      linha: z.number().int().describe('Linha no CSV (1 = cabeçalho)'),
+      linha_publicada: z.string().describe('Texto exato da linha no arquivo oficial'),
+    }),
+  ),
+  divergencias: z.array(z.string()).describe('Códigos com mais de um registro vigente na data e alíquotas diferentes; a plataforma não escolhe entre eles'),
+  aviso: z.string(),
+});
+
 export const PedidoPergunta = z.strictObject({ pergunta: z.string().trim().min(3).max(1000) });
 
 const FonteCitada = z.object({
@@ -215,7 +290,8 @@ const FonteCitada = z.object({
 export const RespostaPergunta = z.object({
   id: z.uuid().describe('Identificador para consultar esta resposta depois em GET /v1/perguntas/{id}'),
   situacao: z.enum(['respondida', 'sem-resposta', 'fora-do-escopo', 'rejeitada']),
-  rota: z.enum(['fora-do-escopo', 'codigo', 'campo', 'prazo', 'conceitual']),
+  // invariant: o enum vem do roteador; uma rota nova sem atualizar o esquema faria `parse` derrubar a resposta com 500.
+  rota: z.enum(ROTAS),
   resposta: z.string().describe('Texto com marcadores [n] que apontam para `fontes`'),
   posicao_em: z.iso.date(),
   fontes: z.array(FonteCitada),

@@ -139,11 +139,54 @@ Pendências conhecidas da Fase 4:
 
 ## Fase 5 — ISS
 
-Decidido: o ISS fica fora das fases 0 a 4.
+Estado em 17/11/2026: ✅ feito · 🟡 parcial · ⬜ pendente.
 
-- Alíquotas de ISSQN publicadas no Portal NFS-e e regras de apuração.
-- Legislação municipal a partir dos sites oficiais das prefeituras, começando pelos municípios de maior volume de emissão.
-- Um adaptador por município (ou por sistema de publicação usado por grupos de municípios), com o mesmo arquivo versionado e a mesma barreira de origem oficial.
+- ✅ **Alíquotas de ISSQN do Portal NFS-e** (fonte `nfse-aliquotas-iss`, N2): a página `biblioteca/aliquotas/aliquotas-de-issqn` linka um ZIP com um CSV por UF e um TXT que repete tudo.
+  - O parser ([aliquotas-iss.ts](../packages/parsers/src/aliquotas-iss.ts)) só abre os CSV; o TXT de 145 MB é pulado sem ser descompactado.
+  - Cada campo é validado: código IBGE coerente com a UF do arquivo, código de serviço, alíquota entre 0 e 100, datas reais.
+  - Toda linha aceita reconstrói byte a byte a linha publicada, e essa linha é o trecho citado.
+  - Cabeçalho diferente, ou mais de 0,1% de linhas fora do formato, derruba a extração (falha fechada).
+  - Na coleta real (pacote de 03/09/2026): 1.919.368 linhas, 5.341 municípios, 0 recusadas; 6 s de leitura e 89 s até gravar no banco.
+- ✅ **Banco** (migração [009](../packages/db/migracoes/009_iss.sql)):
+  - `tabela_aliquota_iss`, `municipio_iss` e `aliquota_iss` só aceitam inserção;
+  - vale o pacote com a data de extração mais recente (`tabela_aliquota_iss_vigente`), e o anterior continua arquivado;
+  - o processador só insere, e a API e o leitor só leem.
+- ✅ **Legislação municipal, um adaptador por município** (`Fonte.municipio`, id `municipio-<IBGE>-legislacao`, N1): começa por **São Paulo**, o maior emissor, que não está na tabela nacional. O município tem o próprio NFS-e, assim como Campinas, Guarulhos, Belo Horizonte e Rio de Janeiro, também ausentes da tabela. Entram a Lei 13.701/2003 (ISS e alíquotas), o Decreto 53.151/2012 (Regulamento do ISS) e a Lei 14.097/2005 (NFS-e), do catálogo oficial da Casa Civil (`legislacao.prefeitura.sp.gov.br`, host inteiro na lista fechada). A sondagem dos outros candidatos está em [FONTES-OFICIAIS.md](FONTES-OFICIAIS.md#legislação-municipal-fase-5).
+- ✅ **Perguntas de ISS** ([iss.ts](../packages/llm/src/iss.ts)); o roteador deixou de recusar ISS e ganhou duas rotas:
+  - `iss-aliquota`, para município da tabela: resposta montada em código, **sem modelo**.
+    - Cada número sai de uma linha do CSV citada literalmente (arquivo, linha, URL e hash do pacote).
+    - Vale o registro vigente na data perguntada (ou hoje); registro com fim anterior ao início é tratado como cancelado.
+    - Registros vigentes divergentes saem todos, com aviso, e a plataforma não escolhe.
+  - `iss`, para apuração, retenção, base de cálculo e recolhimento: busca restrita à legislação federal (LC 116/2003) e, se o município citado for coberto, à lei dele.
+    - Município sem legislação coletada: só a lei federal, com aviso.
+    - Sem município citado: só a lei federal.
+    - Nome de município em mais de uma UF, ou dois municípios citados: a resposta pede a UF, sem chamar o modelo.
+  - Consultoria continua fora do escopo.
+- ✅ **API e MCP**:
+  - `GET /v1/iss/municipios`: cobertura por município (tabela e legislação);
+  - `GET /v1/iss/aliquotas`: linha publicada, vigência na data, cancelados e divergências;
+  - ferramenta `consultar_aliquota_iss`.
+- 🟡 **Verificação de alegações sobre ISS**: continua FORA DO ESCOPO, decidido em código. Um FALSO sobre alíquota municipal exigiria regra de evidência própria (tabela oficial ou lei do município, com fato curado), que ainda não existe em [regras-veredito.ts](../packages/llm/src/regras-veredito.ts).
+- ⬜ **Mais municípios.** A sondagem de 17/11/2026 bloqueou:
+  - Porto Alegre e Curitiba: robots.txt proíbe;
+  - Salvador: certificado TLS expirado;
+  - Rio de Janeiro: cadeia TLS incompleta;
+  - Belo Horizonte: texto carregado por script.
+
+Teste local de ponta a ponta (17/11/2026, banco de desenvolvimento): coleta real das duas fontes novas (5 documentos), processamento, e consultas pela API.
+- `/v1/iss/municipios` respondeu em 58 ms.
+- `/v1/iss/aliquotas` de Adamantina/SP, item 1.05, respondeu em 38 ms com a linha `SP.csv:7`.
+- `POST /v1/perguntas`:
+  - "alíquota do ISS em Adamantina/SP para o item 1.05": rota `iss-aliquota`, respondida sem modelo e com custo zero;
+  - "em Bom Jesus": pediu a UF entre os 5 municípios com esse nome;
+  - "em São Paulo para serviços de informática": chamou o `claude-opus-5-5` real (8.846 tokens de entrada, US$ 0,04) e respondeu "não encontrei". A busca restrita trouxe só a lei de São Paulo e a federal, mas não trouxe o art. 16 da Lei 13.701 (alíquotas): é o limite da busca léxica para pergunta em linguagem natural (ver a Fase 2).
+
+Pendências conhecidas da Fase 5:
+- **Busca de ISS em linguagem natural:** o termo do município aparece em quase todo trecho da lei municipal e a busca léxica não acha o artigo das alíquotas. Depende do braço vetorial (decisão nº 1) ou de uma rota que consulte direto o artigo de alíquotas da lei coberta.
+- **Armazenamento:** cada pacote novo de alíquotas ocupa cerca de 460 MB no Postgres (199 MB de dados e 261 MB de índices, medido). Como o arquivo é só inserção, os pacotes se acumulam. Falta uma política de retenção para pacotes superados, preservando os que foram citados.
+- **Reprocessamento × curadoria:** `evidencia_atual` de fatos e relações aprovados exige que o trecho de evidência pertença à extração vigente. Subir `VERSAO_EXTRATOR` reprocessa tudo e deixaria **todos** os fatos aprovados sem evidência atual, ou seja, sem FALSO nem DESATUALIZADO até nova curadoria. Por isso as correções desta fase não subiram a versão: elas só mudam a saída das páginas do catálogo de São Paulo, ainda não coletadas fora da base local. A correção é a área principal `div.customStyle` e o sufixo de artigo só quando o hífen vem colado ao número ("Art. 9º - São" não é "Art. 9-S"). Antes de subir a versão de novo: reprocessamento seletivo por fonte, ou evidência ancorada no texto e não no id do trecho.
+- **Base local:** as três leis de São Paulo têm duas versões extras no arquivo, efeito das correções da área principal durante o desenvolvimento, e a versão vigente na base local ainda tem os rótulos de artigo antigos. Isso não afeta outra base: uma coleta nova já usa o extrator corrigido.
+- **ISS na verificação de alegações** (ver acima) e **mais municípios** (um adaptador por município, sempre pela sondagem).
 
 ## Métricas de qualidade (metas propostas, a calibrar na Fase 0)
 

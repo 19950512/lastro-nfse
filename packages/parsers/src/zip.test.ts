@@ -28,6 +28,16 @@ describe('lerZip', () => {
     expect(() => lerZip(zip, limites({ maxBytesPorArquivo: 1024 * 1024 }))).toThrow(/limite de descompressão/);
   });
 
+  it('pula, sem descompactar nem gastar orçamento, a entrada fora do filtro', () => {
+    const zip = criarZip([
+      { nome: 'SP.csv', conteudo: 'a;b' },
+      { nome: 'tudo.txt', conteudo: Buffer.alloc(5 * 1024 * 1024), tamanhoDeclarado: 10 },
+    ]);
+    expect(() => lerZip(zip, limites({ maxBytesPorArquivo: 1024 }))).toThrow(ErroParser);
+    const entradas = lerZip(zip, limites({ maxBytesPorArquivo: 1024, maxBytesDescompactados: 1024 }), (n) => n.endsWith('.csv'));
+    expect(entradas.map((e) => e.nome)).toEqual(['SP.csv']);
+  });
+
   it('aplica o orçamento total somando todas as entradas', () => {
     const zip = criarZip([
       { nome: 'a', conteudo: Buffer.alloc(600_000) },

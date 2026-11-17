@@ -36,7 +36,7 @@ try {
 const abertas = await abrirApi();
 const app = construirCanais(
   {
-    perguntas: criarServicoPerguntas({ clientes: abertas.clientes, conhecimento: abertas.conhecimento, fatos: abertas.fatos, modelo, fontes: FONTES, orcamentoDiarioUsd }),
+    perguntas: criarServicoPerguntas({ clientes: abertas.clientes, conhecimento: abertas.conhecimento, fatos: abertas.fatos, iss: abertas.iss, modelo, fontes: FONTES, orcamentoDiarioUsd }),
     verificacoes: criarServicoVerificacoes({
       clientes: abertas.clientes,
       verificacoes: abertas.verificacoes,
